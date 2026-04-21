@@ -13,6 +13,11 @@ from ow_client import fetch_player, ProfilePrivateError, PlayerNotFoundError, Ov
 logger = logging.getLogger(__name__)
 scheduler = AsyncIOScheduler()
 
+# battletag -> {baseline, latest, player_name, avatar_url}
+# Accumulates stats across polls while the player is still active.
+# Flushed (report sent) on the first poll that finds no new games.
+_pending_sessions: dict[str, dict] = {}
+
 
 async def snapshot_player(battletag: str) -> None:
     try:
@@ -78,15 +83,14 @@ async def snapshot_player(battletag: str) -> None:
         await session.commit()
         logger.info("Snapshot saved for %s", battletag)
 
-    # Fire game report if games were played since last snapshot
+    # Session tracking: accumulate deltas across polls and fire the report
+    # only once a full poll cycle passes with no new games. This handles the
+    # OverFast API delay, which can spread a single play session across several
+    # polls before all games appear.
     prev_games = prev_dict["games_played"]
     new_games = data.games_played
-    if (
-        prev_games is not None
-        and new_games is not None
-        and new_games > prev_games
-    ):
-        new_dict = {
+    if prev_games is not None and new_games is not None and new_games > prev_games:
+        latest = {
             "games_played": data.games_played,
             "games_won": data.games_won,
             "games_lost": data.games_lost,
@@ -98,12 +102,25 @@ async def snapshot_player(battletag: str) -> None:
             "rank_open": data.rank_open,
             "fetched_at": snapshot.fetched_at,
         }
+        if battletag not in _pending_sessions:
+            _pending_sessions[battletag] = {
+                "baseline": prev_dict,
+                "latest": latest,
+                "player_name": data.username,
+                "avatar_url": data.avatar,
+            }
+        else:
+            _pending_sessions[battletag]["latest"] = latest
+            _pending_sessions[battletag]["player_name"] = data.username
+            _pending_sessions[battletag]["avatar_url"] = data.avatar
+    elif battletag in _pending_sessions:
+        session = _pending_sessions.pop(battletag)
         asyncio.create_task(_send_report(
-            player_name=data.username,
+            player_name=session["player_name"],
             battletag=battletag,
-            avatar_url=data.avatar,
-            prev=prev_dict,
-            new=new_dict,
+            avatar_url=session["avatar_url"],
+            prev=session["baseline"],
+            new=session["latest"],
         ))
 
 

@@ -131,17 +131,20 @@ def build_game_report_embed(
     else:
         color = TIE_COLOR
 
-    embed = discord.Embed(title=f"🎮 Game Report — {player_name}", color=color)
+    embed = discord.Embed(title=f"📊 Session Summary — {player_name}", color=color)
     embed.set_author(name=battletag)
     if avatar_url:
         embed.set_thumbnail(url=avatar_url)
 
     # Session result
-    if games_delta == 1:
-        session_str = "✅ **Win!**" if wins_delta == 1 else "❌ **Loss**"
-    else:
-        session_str = f"+{wins_delta}W / +{losses_delta}L over {games_delta} games"
-    embed.add_field(name="Session Result", value=session_str, inline=False)
+    result_parts = []
+    if wins_delta:
+        result_parts.append(f"✅ **{wins_delta}W**")
+    if losses_delta:
+        result_parts.append(f"❌ **{losses_delta}L**")
+    session_str = "  ·  ".join(result_parts) if result_parts else "—"
+    game_word = "game" if games_delta == 1 else "games"
+    embed.add_field(name=f"Session ({games_delta} {game_word})", value=session_str, inline=False)
 
     # Rank changes
     rank_changes = []
@@ -153,19 +156,31 @@ def build_game_report_embed(
     if rank_changes:
         embed.add_field(name="Rank Changes", value="\n".join(rank_changes), inline=False)
 
-    # Current stats
+    # Overall stats with deltas where calculable
     stat_lines = []
     if new["win_rate"] is not None:
-        stat_lines.append(f"**Win Rate:** {new['win_rate']:.1%}")
+        prev_wr = prev.get("win_rate")
+        if prev_wr is not None:
+            delta = new["win_rate"] - prev_wr
+            sign = "+" if delta >= 0 else ""
+            stat_lines.append(f"**Win Rate:** {new['win_rate']:.1%} ({sign}{delta:.1%})")
+        else:
+            stat_lines.append(f"**Win Rate:** {new['win_rate']:.1%}")
     if new["kda"] is not None:
-        stat_lines.append(f"**KDA:** {new['kda']:.2f}")
+        prev_kda = prev.get("kda")
+        if prev_kda is not None:
+            delta = new["kda"] - prev_kda
+            sign = "+" if delta >= 0 else ""
+            stat_lines.append(f"**KDA:** {new['kda']:.2f} ({sign}{delta:.2f})")
+        else:
+            stat_lines.append(f"**KDA:** {new['kda']:.2f}")
     if new["games_played"] is not None:
-        stat_lines.append(f"**Total Games:** {new['games_played']}")
+        stat_lines.append(f"**Career Games:** {new['games_played']}")
     if stat_lines:
-        embed.add_field(name="Current Stats", value="\n".join(stat_lines), inline=True)
+        embed.add_field(name="Overall Stats", value="\n".join(stat_lines), inline=True)
 
     fetched_at: datetime = new["fetched_at"]
-    embed.set_footer(text=f"Detected · {fetched_at.strftime('%Y-%m-%d %H:%M UTC')}")
+    embed.set_footer(text=f"Session finalised · {fetched_at.strftime('%Y-%m-%d %H:%M UTC')}")
     return embed
 
 
