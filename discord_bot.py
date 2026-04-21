@@ -184,6 +184,56 @@ def build_game_report_embed(
     return embed
 
 
+def build_stats_update_embed(
+    player_name: str,
+    battletag: str,
+    avatar_url: str | None,
+    prev: dict,
+    new: dict,
+) -> discord.Embed:
+    embed = discord.Embed(title=f"📈 Stats Updated — {player_name}", color=OW_COLOR)
+    embed.set_author(name=battletag)
+    if avatar_url:
+        embed.set_thumbnail(url=avatar_url)
+
+    rank_changes = []
+    for label, key in [("Tank", "rank_tank"), ("Damage", "rank_damage"),
+                        ("Support", "rank_support"), ("Open Queue", "rank_open")]:
+        p, n = prev.get(key), new.get(key)
+        if p != n:
+            rank_changes.append(
+                f"**{label}:** {_rank_display(p) if p else 'Unranked'} → {_rank_display(n) if n else 'Unranked'}"
+            )
+    if rank_changes:
+        embed.add_field(name="Rank Changes", value="\n".join(rank_changes), inline=False)
+
+    stat_lines = []
+    if new.get("win_rate") is not None:
+        prev_wr = prev.get("win_rate")
+        if prev_wr is not None and prev_wr != new["win_rate"]:
+            delta = new["win_rate"] - prev_wr
+            sign = "+" if delta >= 0 else ""
+            stat_lines.append(f"**Win Rate:** {new['win_rate']:.1%} ({sign}{delta:.1%})")
+        else:
+            stat_lines.append(f"**Win Rate:** {new['win_rate']:.1%}")
+    if new.get("kda") is not None:
+        prev_kda = prev.get("kda")
+        if prev_kda is not None and prev_kda != new["kda"]:
+            delta = new["kda"] - prev_kda
+            sign = "+" if delta >= 0 else ""
+            stat_lines.append(f"**KDA:** {new['kda']:.2f} ({sign}{delta:.2f})")
+        else:
+            stat_lines.append(f"**KDA:** {new['kda']:.2f}")
+    if new.get("games_played") is not None:
+        stat_lines.append(f"**Career Games:** {new['games_played']}")
+    if stat_lines:
+        embed.add_field(name="Current Stats", value="\n".join(stat_lines), inline=True)
+
+    fetched_at: datetime = new["fetched_at"]
+    embed.set_footer(text=f"Detected · {fetched_at.strftime('%Y-%m-%d %H:%M UTC')}")
+    return embed
+
+
 # ---------------------------------------------------------------------------
 # Game report dispatch (called by scheduler)
 # ---------------------------------------------------------------------------
@@ -213,6 +263,33 @@ async def send_game_report(
                 logger.warning("No permission to send to channel %s", ch.channel_id)
             except Exception as e:
                 logger.error("Failed to send game report to %s: %s", ch.channel_id, e)
+
+
+async def send_stats_update(
+    player_name: str,
+    battletag: str,
+    avatar_url: str | None,
+    prev: dict,
+    new: dict,
+) -> None:
+    if not bot.is_ready():
+        return
+
+    embed = build_stats_update_embed(player_name, battletag, avatar_url, prev, new)
+
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(select(DiscordChannel))
+        channels = result.scalars().all()
+
+    for ch in channels:
+        discord_channel = bot.get_channel(int(ch.channel_id))
+        if discord_channel:
+            try:
+                await discord_channel.send(embed=embed)
+            except discord.Forbidden:
+                logger.warning("No permission to send to channel %s", ch.channel_id)
+            except Exception as e:
+                logger.error("Failed to send stats update to %s: %s", ch.channel_id, e)
 
 
 # ---------------------------------------------------------------------------

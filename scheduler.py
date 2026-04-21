@@ -53,6 +53,8 @@ async def snapshot_player(battletag: str) -> None:
             "rank_damage": prev_snapshot.rank_damage if prev_snapshot else None,
             "rank_support": prev_snapshot.rank_support if prev_snapshot else None,
             "rank_open": prev_snapshot.rank_open if prev_snapshot else None,
+            "kda": prev_snapshot.kda if prev_snapshot else None,
+            "win_rate": prev_snapshot.win_rate if prev_snapshot else None,
         }
 
         player.display_name = data.username
@@ -89,39 +91,64 @@ async def snapshot_player(battletag: str) -> None:
     # polls before all games appear.
     prev_games = prev_dict["games_played"]
     new_games = data.games_played
+    new_dict = {
+        "games_played": data.games_played,
+        "games_won": data.games_won,
+        "games_lost": data.games_lost,
+        "kda": data.kda,
+        "win_rate": data.win_rate,
+        "rank_tank": data.rank_tank,
+        "rank_damage": data.rank_damage,
+        "rank_support": data.rank_support,
+        "rank_open": data.rank_open,
+        "fetched_at": snapshot.fetched_at,
+    }
+
     if prev_games is not None and new_games is not None and new_games > prev_games:
-        latest = {
-            "games_played": data.games_played,
-            "games_won": data.games_won,
-            "games_lost": data.games_lost,
-            "kda": data.kda,
-            "win_rate": data.win_rate,
-            "rank_tank": data.rank_tank,
-            "rank_damage": data.rank_damage,
-            "rank_support": data.rank_support,
-            "rank_open": data.rank_open,
-            "fetched_at": snapshot.fetched_at,
-        }
         if battletag not in _pending_sessions:
             _pending_sessions[battletag] = {
                 "baseline": prev_dict,
-                "latest": latest,
+                "latest": new_dict,
                 "player_name": data.username,
                 "avatar_url": data.avatar,
             }
         else:
-            _pending_sessions[battletag]["latest"] = latest
+            _pending_sessions[battletag]["latest"] = new_dict
             _pending_sessions[battletag]["player_name"] = data.username
             _pending_sessions[battletag]["avatar_url"] = data.avatar
-    elif battletag in _pending_sessions:
-        session = _pending_sessions.pop(battletag)
-        asyncio.create_task(_send_report(
-            player_name=session["player_name"],
-            battletag=battletag,
-            avatar_url=session["avatar_url"],
-            prev=session["baseline"],
-            new=session["latest"],
-        ))
+    else:
+        if battletag in _pending_sessions:
+            # Session ended — flush the accumulated report.
+            session = _pending_sessions.pop(battletag)
+            asyncio.create_task(_send_report(
+                player_name=session["player_name"],
+                battletag=battletag,
+                avatar_url=session["avatar_url"],
+                prev=session["baseline"],
+                new=session["latest"],
+            ))
+        elif _ranks_or_stats_changed(prev_dict, new_dict):
+            # No new games and no pending session, but something else changed
+            # (rank update, win-rate recalc, etc.) — notify immediately.
+            asyncio.create_task(_send_stats_update(
+                player_name=data.username,
+                battletag=battletag,
+                avatar_url=data.avatar,
+                prev=prev_dict,
+                new=new_dict,
+            ))
+
+
+def _ranks_or_stats_changed(prev: dict, new: dict) -> bool:
+    return (
+        prev.get("rank_tank") != new.get("rank_tank")
+        or prev.get("rank_damage") != new.get("rank_damage")
+        or prev.get("rank_support") != new.get("rank_support")
+        or prev.get("rank_open") != new.get("rank_open")
+        or prev.get("games_played") != new.get("games_played")
+        or prev.get("kda") != new.get("kda")
+        or prev.get("win_rate") != new.get("win_rate")
+    )
 
 
 async def _send_report(
@@ -136,6 +163,20 @@ async def _send_report(
         await send_game_report(player_name, battletag, avatar_url, prev, new)
     except Exception as e:
         logger.error("Error sending game report for %s: %s", battletag, e)
+
+
+async def _send_stats_update(
+    player_name: str,
+    battletag: str,
+    avatar_url: str | None,
+    prev: dict,
+    new: dict,
+) -> None:
+    try:
+        from discord_bot import send_stats_update
+        await send_stats_update(player_name, battletag, avatar_url, prev, new)
+    except Exception as e:
+        logger.error("Error sending stats update for %s: %s", battletag, e)
 
 
 async def poll_all_players() -> None:
