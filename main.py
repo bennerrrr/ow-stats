@@ -10,6 +10,7 @@ from sqlalchemy import select
 load_dotenv()
 
 from database import init_db, AsyncSessionLocal
+from discord_bot import start_bot, stop_bot
 from models import Player
 from routers.players import router
 from scheduler import start_scheduler, stop_scheduler, poll_all_players
@@ -38,10 +39,13 @@ async def lifespan(app: FastAPI):
     await init_db()
     await seed_players()
     start_scheduler()
-    # Run an immediate poll so the dashboard isn't empty on first load
     asyncio.create_task(poll_all_players())
+    bot_task = await start_bot()
     yield
     stop_scheduler()
+    await stop_bot()
+    if bot_task:
+        bot_task.cancel()
 
 
 app = FastAPI(title="OW Stats", lifespan=lifespan)

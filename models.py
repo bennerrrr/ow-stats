@@ -5,6 +5,18 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from database import Base
 
 
+class DiscordChannel(Base):
+    __tablename__ = "discord_channels"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    guild_id: Mapped[str] = mapped_column(String, nullable=False)
+    channel_id: Mapped[str] = mapped_column(String, unique=True, nullable=False)
+    channel_name: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    added_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(timezone.utc)
+    )
+
+
 class Player(Base):
     __tablename__ = "players"
 
@@ -46,6 +58,9 @@ class StatSnapshot(Base):
 
     # Top heroes JSON: [{"hero": "ana", "name": "Ana", "time_played": 3600, "winrate": 0.55, "kda": 3.1}]
     top_heroes: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
+
+    # Per-gamemode breakdown: {"competitive": {games_played, win_rate, kda, top_heroes, ...}, "quickplay": {...}}
+    stats_by_gamemode: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
 
     # Full raw API responses for forward-compatibility
     raw_summary: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)

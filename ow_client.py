@@ -1,3 +1,4 @@
+import asyncio
 import time
 from dataclasses import dataclass, field
 from typing import Optional
@@ -44,6 +45,7 @@ class PlayerData:
     kda: Optional[float]
     win_rate: Optional[float]
     top_heroes: list[HeroStat] = field(default_factory=list)
+    stats_by_gamemode: dict = field(default_factory=dict)
     raw_summary: dict = field(default_factory=dict)
     raw_stats: dict = field(default_factory=dict)
 
@@ -71,36 +73,42 @@ def _parse_summary(battletag: str, data: dict) -> dict:
         "rank_tank": _rank_str(pc.get("tank")),
         "rank_damage": _rank_str(pc.get("damage")),
         "rank_support": _rank_str(pc.get("support")),
-        "rank_open": _rank_str(pc.get("open_queue")),
+        "rank_open": _rank_str(pc.get("open")),
     }
 
 
 def _parse_stats(data: dict) -> dict:
-    """
-    Extract games_played, games_won, kda, win_rate, top_heroes from the
-    /stats/summary response. The API returns general aggregate stats and
-    a list of hero-specific summaries.
-    """
     general = data.get("general") or {}
-    heroes_raw = data.get("heroes") or []
+    heroes_raw = data.get("heroes") or {}
 
     games_played = general.get("games_played")
     games_won = general.get("games_won")
     games_lost = general.get("games_lost")
-    win_rate = general.get("winrate")
     kda = general.get("kda")
 
-    # Compute win_rate ourselves if not provided directly
-    if win_rate is None and games_played and games_played > 0 and games_won is not None:
+    # API returns winrate as 0-100; normalize to 0-1 for storage
+    raw_winrate = general.get("winrate")
+    if raw_winrate is not None:
+        win_rate = raw_winrate / 100.0
+    elif games_played and games_played > 0 and games_won is not None:
         win_rate = games_won / games_played
+    else:
+        win_rate = None
+
+    # heroes is now a dict {hero_name: {time_played, winrate, kda, ...}}
+    hero_items = [
+        {"hero": name, **stats}
+        for name, stats in heroes_raw.items()
+    ] if isinstance(heroes_raw, dict) else heroes_raw
 
     top_heroes = []
-    for h in sorted(heroes_raw, key=lambda x: x.get("time_played", 0), reverse=True)[:5]:
+    for h in sorted(hero_items, key=lambda x: x.get("time_played") or 0, reverse=True)[:5]:
+        raw_hero_winrate = h.get("winrate")
         top_heroes.append({
-            "hero": h.get("key", ""),
-            "name": h.get("name", h.get("key", "").capitalize()),
-            "time_played": h.get("time_played", 0),
-            "win_rate": h.get("winrate"),
+            "hero": h.get("hero", ""),
+            "name": h.get("hero", "").replace("-", " ").title(),
+            "time_played": h.get("time_played") or 0,
+            "win_rate": raw_hero_winrate / 100.0 if raw_hero_winrate is not None else None,
             "kda": h.get("kda"),
         })
 
@@ -125,23 +133,30 @@ async def fetch_player(battletag: str) -> PlayerData:
             return cached_data  # type: ignore[return-value]
 
     async with httpx.AsyncClient(base_url=BASE_URL, timeout=15.0) as client:
-        summary_resp = await client.get(f"/players/{url_tag}/summary")
-        if summary_resp.status_code == 404:
-            raise PlayerNotFoundError(f"Player '{battletag}' not found")
-        if summary_resp.status_code == 403:
-            raise ProfilePrivateError(f"Profile for '{battletag}' is private")
-        if summary_resp.status_code != 200:
-            raise OverFastError(f"OverFast API error {summary_resp.status_code} for {battletag}")
+        summary_resp, stats_resp, comp_resp, qp_resp = await asyncio.gather(
+            client.get(f"/players/{url_tag}/summary"),
+            client.get(f"/players/{url_tag}/stats/summary"),
+            client.get(f"/players/{url_tag}/stats/summary", params={"gamemode": "competitive"}),
+            client.get(f"/players/{url_tag}/stats/summary", params={"gamemode": "quickplay"}),
+        )
 
-        summary_data = summary_resp.json()
+    if summary_resp.status_code == 404:
+        raise PlayerNotFoundError(f"Player '{battletag}' not found")
+    if summary_resp.status_code == 403:
+        raise ProfilePrivateError(f"Profile for '{battletag}' is private")
+    if summary_resp.status_code != 200:
+        raise OverFastError(f"OverFast API error {summary_resp.status_code} for {battletag}")
 
-        stats_resp = await client.get(f"/players/{url_tag}/stats/summary")
-        if stats_resp.status_code == 403:
-            raise ProfilePrivateError(f"Profile for '{battletag}' is private")
-        stats_data = stats_resp.json() if stats_resp.status_code == 200 else {}
+    summary_data = summary_resp.json()
+    stats_data = stats_resp.json() if stats_resp.status_code == 200 else {}
+    comp_data = comp_resp.json() if comp_resp.status_code == 200 else {}
+    qp_data = qp_resp.json() if qp_resp.status_code == 200 else {}
 
     parsed_summary = _parse_summary(battletag, summary_data)
     parsed_stats = _parse_stats(stats_data)
+
+    parsed_comp = _parse_stats(comp_data)
+    parsed_qp = _parse_stats(qp_data)
 
     result = PlayerData(
         battletag=battletag,
@@ -157,6 +172,10 @@ async def fetch_player(battletag: str) -> PlayerData:
         kda=parsed_stats["kda"],
         win_rate=parsed_stats["win_rate"],
         top_heroes=[HeroStat(**h) for h in parsed_stats["top_heroes"]],
+        stats_by_gamemode={
+            "competitive": parsed_comp,
+            "quickplay": parsed_qp,
+        },
         raw_summary=summary_data,
         raw_stats=stats_data,
     )

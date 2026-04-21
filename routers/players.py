@@ -12,6 +12,7 @@ from scheduler import snapshot_player
 
 router = APIRouter()
 templates = Jinja2Templates(directory="templates")
+templates.env.filters["urltag"] = lambda t: t.replace("#", "%23")
 
 
 @router.get("/", response_class=HTMLResponse)
@@ -107,4 +108,4 @@ async def refresh_player(battletag: str, db: AsyncSession = Depends(get_db)):
     from ow_client import invalidate_cache
     invalidate_cache(battletag)
     await snapshot_player(battletag)
-    return RedirectResponse(f"/players/{battletag}", status_code=303)
+    return RedirectResponse(f"/players/{battletag.replace('#', '%23')}", status_code=303)
