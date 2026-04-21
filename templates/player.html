@@ -20,7 +20,7 @@
     <h1 class="text-3xl font-bold text-white">{{ player.display_name or player.battletag.split('#')[0] }}</h1>
     <p class="text-gray-500">{{ player.battletag }}</p>
   </div>
-  <form method="post" action="/players/{{ player.battletag }}/refresh" class="ml-auto">
+  <form method="post" action="/players/{{ player.battletag | urltag }}/refresh" class="ml-auto">
     <button type="submit"
       class="bg-ow-card border border-ow-border hover:border-ow-orange text-sm text-gray-300 px-4 py-2 rounded-lg transition-colors">
       Refresh stats
@@ -62,61 +62,65 @@
   </div>
 </section>
 
-<!-- Career stats summary -->
-<section class="mb-8">
-  <h2 class="text-lg font-semibold text-white mb-3">Career Stats (Latest Snapshot)</h2>
-  <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
-    {% for label, value in [
-        ('Win Rate', (("%.1f"|format(latest.win_rate * 100)) ~ '%') if latest.win_rate is not none else '—'),
-        ('K/D/A', ("%.2f"|format(latest.kda)) if latest.kda is not none else '—'),
-        ('Games Played', latest.games_played if latest.games_played is not none else '—'),
-        ('Wins', latest.games_won if latest.games_won is not none else '—'),
-    ] %}
-    <div class="bg-ow-card border border-ow-border rounded-lg p-4 text-center">
-      <p class="text-2xl font-bold text-ow-orange">{{ value }}</p>
-      <p class="text-xs text-gray-500 mt-1">{{ label }}</p>
-    </div>
+<!-- Gamemode tabs -->
+{% set gbm = latest.stats_by_gamemode or {} %}
+{% set gm_tabs = [('all', 'All Modes'), ('competitive', 'Competitive'), ('quickplay', 'Quick Play')] %}
+
+<div class="mb-6">
+  <div class="flex gap-1 border-b border-ow-border">
+    {% for key, label in gm_tabs %}
+    <button
+      onclick="switchTab('{{ key }}')"
+      id="tab-{{ key }}"
+      class="tab-btn px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px
+        {% if key == 'all' %}border-ow-orange text-ow-orange{% else %}border-transparent text-gray-400 hover:text-gray-200{% endif %}">
+      {{ label }}
+    </button>
     {% endfor %}
   </div>
-</section>
+</div>
 
-<!-- Top heroes -->
-{% if latest.top_heroes %}
-<section class="mb-8">
-  <h2 class="text-lg font-semibold text-white mb-3">Top Heroes</h2>
-  <div class="bg-ow-card border border-ow-border rounded-xl overflow-hidden">
-    <table class="w-full text-sm">
-      <thead class="bg-ow-border text-gray-400 text-xs uppercase">
-        <tr>
-          <th class="px-4 py-3 text-left">Hero</th>
-          <th class="px-4 py-3 text-right">Time Played</th>
-          <th class="px-4 py-3 text-right">Win Rate</th>
-          <th class="px-4 py-3 text-right">K/D/A</th>
-        </tr>
-      </thead>
-      <tbody class="divide-y divide-ow-border">
-        {% for hero in latest.top_heroes %}
-        <tr class="hover:bg-ow-border transition-colors">
-          <td class="px-4 py-3 font-medium text-white">{{ hero.name }}</td>
-          <td class="px-4 py-3 text-right text-gray-400">
-            {{ (hero.time_played // 3600) }}h {{ ((hero.time_played % 3600) // 60) }}m
-          </td>
-          <td class="px-4 py-3 text-right
-            {% if hero.win_rate is not none and hero.win_rate >= 0.55 %}text-green-400
-            {% elif hero.win_rate is not none and hero.win_rate < 0.45 %}text-red-400
-            {% else %}text-gray-400{% endif %}">
-            {% if hero.win_rate is not none %}{{ "%.1f"|format(hero.win_rate * 100) }}%{% else %}—{% endif %}
-          </td>
-          <td class="px-4 py-3 text-right text-gray-400">
-            {% if hero.kda is not none %}{{ "%.2f"|format(hero.kda) }}{% else %}—{% endif %}
-          </td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
-</section>
-{% endif %}
+<!-- Stats panel: All -->
+<div id="panel-all">
+  {% set s = latest %}
+  {% include "partials/stats_panel.html" %}
+</div>
+
+<!-- Stats panel: Competitive -->
+<div id="panel-competitive" class="hidden">
+  {% if gbm.competitive and gbm.competitive.games_played %}
+    {% set s = gbm.competitive %}
+    {% include "partials/stats_panel.html" %}
+  {% else %}
+    <p class="text-gray-500 italic mb-8">No competitive data in this snapshot.</p>
+  {% endif %}
+</div>
+
+<!-- Stats panel: Quick Play -->
+<div id="panel-quickplay" class="hidden">
+  {% if gbm.quickplay and gbm.quickplay.games_played %}
+    {% set s = gbm.quickplay %}
+    {% include "partials/stats_panel.html" %}
+  {% else %}
+    <p class="text-gray-500 italic mb-8">No quick play data in this snapshot.</p>
+  {% endif %}
+</div>
+
+<script>
+function switchTab(key) {
+  ['all', 'competitive', 'quickplay'].forEach(function(k) {
+    document.getElementById('panel-' + k).classList.toggle('hidden', k !== key);
+    var btn = document.getElementById('tab-' + k);
+    if (k === key) {
+      btn.classList.add('border-ow-orange', 'text-ow-orange');
+      btn.classList.remove('border-transparent', 'text-gray-400', 'hover:text-gray-200');
+    } else {
+      btn.classList.remove('border-ow-orange', 'text-ow-orange');
+      btn.classList.add('border-transparent', 'text-gray-400', 'hover:text-gray-200');
+    }
+  });
+}
+</script>
 
 <!-- Snapshot history -->
 <section>
