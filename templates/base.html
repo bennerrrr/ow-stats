@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{% block title %}OW Stats{% endblock %}</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            ow: {
+              orange: '#F99E1A',
+              blue:   '#4A90D9',
+              dark:   '#1A1A2E',
+              card:   '#16213E',
+              border: '#0F3460',
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    body { background-color: #1A1A2E; color: #E0E0E0; }
+    .rank-badge { font-size: 0.7rem; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; }
+  </style>
+</head>
+<body class="min-h-screen font-sans">
+
+  <!-- Navbar -->
+  <nav class="bg-ow-card border-b border-ow-border px-6 py-3 flex items-center gap-4">
+    <a href="/" class="text-ow-orange font-bold text-xl tracking-tight">OW Stats</a>
+    <span class="text-gray-500 text-sm ml-auto">Overwatch 2 Tracker</span>
+  </nav>
+
+  <main class="max-w-6xl mx-auto px-4 py-8">
+    {% block content %}{% endblock %}
+  </main>
+
+</body>
+</html>

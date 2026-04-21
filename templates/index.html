@@ -1,0 +1,157 @@
+{% extends "base.html" %}
+{% block title %}Dashboard — OW Stats{% endblock %}
+
+{% block content %}
+
+<!-- Error banners -->
+{% set error = request.query_params.get('error') %}
+{% if error %}
+<div class="mb-6 px-4 py-3 rounded-lg
+  {% if error == 'private' %}bg-yellow-900 border border-yellow-600 text-yellow-200
+  {% elif error == 'not_found' %}bg-red-900 border border-red-600 text-red-200
+  {% elif error == 'already_tracked' %}bg-blue-900 border border-blue-600 text-blue-200
+  {% else %}bg-red-900 border border-red-600 text-red-200{% endif %}">
+  {% if error == 'private' %}Profile is private — the player must set their Career Profile Visibility to Public in-game.
+  {% elif error == 'not_found' %}Player not found — double-check the BattleTag (format: Name#1234).
+  {% elif error == 'already_tracked' %}That player is already being tracked.
+  {% else %}API error — try again in a moment.{% endif %}
+</div>
+{% endif %}
+
+<!-- Header + Add Player form -->
+<div class="flex flex-col sm:flex-row sm:items-center gap-4 mb-8">
+  <h1 class="text-2xl font-bold text-white">Tracked Players</h1>
+  <form method="post" action="/players/add" class="flex gap-2 sm:ml-auto">
+    <input
+      type="text"
+      name="battletag"
+      placeholder="BattleTag#1234"
+      required
+      class="bg-ow-card border border-ow-border rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-ow-orange w-48"
+    />
+    <button type="submit"
+      class="bg-ow-orange hover:bg-yellow-500 text-black font-semibold text-sm px-4 py-2 rounded-lg transition-colors">
+      + Add Player
+    </button>
+  </form>
+</div>
+
+{% if not players %}
+<div class="text-center py-20 text-gray-500">
+  <p class="text-lg">No players tracked yet.</p>
+  <p class="text-sm mt-1">Add a BattleTag above to get started.</p>
+</div>
+{% else %}
+
+<!-- Player cards grid -->
+<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+  {% for item in players %}
+  {% set player = item.player %}
+  {% set snap = item.snapshot %}
+
+  <div class="bg-ow-card border border-ow-border rounded-xl p-5 flex flex-col gap-4 hover:border-ow-orange transition-colors">
+
+    <!-- Avatar + name -->
+    <div class="flex items-center gap-3">
+      {% if player.avatar_url %}
+      <img src="{{ player.avatar_url }}" alt="{{ player.display_name }}"
+        class="w-12 h-12 rounded-full border border-ow-border object-cover" />
+      {% else %}
+      <div class="w-12 h-12 rounded-full bg-ow-border flex items-center justify-center text-gray-400 font-bold text-lg">
+        {{ (player.display_name or player.battletag)[0].upper() }}
+      </div>
+      {% endif %}
+      <div>
+        <a href="/players/{{ player.battletag }}" class="font-semibold text-white hover:text-ow-orange transition-colors">
+          {{ player.display_name or player.battletag.split('#')[0] }}
+        </a>
+        <p class="text-xs text-gray-500">{{ player.battletag }}</p>
+      </div>
+    </div>
+
+    {% if snap %}
+
+    <!-- Ranks -->
+    <div class="flex flex-wrap gap-2">
+      {% for role, rank in [('Tank', snap.rank_tank), ('DPS', snap.rank_damage), ('Support', snap.rank_support), ('Open', snap.rank_open)] %}
+      {% if rank %}
+      <span class="rank-badge px-2 py-1 rounded
+        {% set d = rank.split(' ')[0].lower() %}
+        {% if d == 'bronze' %}bg-amber-900 text-amber-300
+        {% elif d == 'silver' %}bg-gray-600 text-gray-200
+        {% elif d == 'gold' %}bg-yellow-700 text-yellow-200
+        {% elif d == 'platinum' %}bg-cyan-900 text-cyan-300
+        {% elif d == 'diamond' %}bg-blue-900 text-blue-300
+        {% elif d == 'master' %}bg-purple-900 text-purple-300
+        {% elif d == 'grandmaster' %}bg-red-900 text-red-300
+        {% elif d == 'champion' %}bg-pink-900 text-pink-300
+        {% else %}bg-gray-700 text-gray-300{% endif %}">
+        {{ role }}: {{ rank }}
+      </span>
+      {% endif %}
+      {% endfor %}
+      {% if not snap.rank_tank and not snap.rank_damage and not snap.rank_support and not snap.rank_open %}
+      <span class="text-xs text-gray-500">Unranked</span>
+      {% endif %}
+    </div>
+
+    <!-- Stats row -->
+    <div class="grid grid-cols-3 gap-2 text-center">
+      <div>
+        <p class="text-ow-orange font-bold text-lg">
+          {% if snap.win_rate is not none %}{{ "%.0f"|format(snap.win_rate * 100) }}%{% else %}—{% endif %}
+        </p>
+        <p class="text-xs text-gray-500">Win Rate</p>
+      </div>
+      <div>
+        <p class="text-ow-orange font-bold text-lg">
+          {% if snap.kda is not none %}{{ "%.2f"|format(snap.kda) }}{% else %}—{% endif %}
+        </p>
+        <p class="text-xs text-gray-500">K/D/A</p>
+      </div>
+      <div>
+        <p class="text-ow-orange font-bold text-lg">
+          {% if snap.games_played is not none %}{{ snap.games_played }}{% else %}—{% endif %}
+        </p>
+        <p class="text-xs text-gray-500">Games</p>
+      </div>
+    </div>
+
+    <!-- Top hero -->
+    {% if snap.top_heroes %}
+    {% set hero = snap.top_heroes[0] %}
+    <div class="flex items-center gap-2 text-sm text-gray-400">
+      <span class="text-gray-500">Top hero:</span>
+      <span class="text-white font-medium">{{ hero.name }}</span>
+      {% if hero.time_played %}
+      <span class="text-gray-500 ml-auto">{{ (hero.time_played // 3600) }}h {{ ((hero.time_played % 3600) // 60) }}m</span>
+      {% endif %}
+    </div>
+    {% endif %}
+
+    <!-- Updated timestamp -->
+    <p class="text-xs text-gray-600">Updated {{ snap.fetched_at.strftime('%b %d, %H:%M') }}</p>
+
+    {% else %}
+    <p class="text-sm text-gray-500 italic">Fetching stats…</p>
+    {% endif %}
+
+    <!-- Actions -->
+    <div class="flex gap-2 mt-auto pt-2 border-t border-ow-border">
+      <a href="/players/{{ player.battletag }}"
+        class="text-xs text-ow-blue hover:text-blue-300 transition-colors">View history</a>
+      <form method="post" action="/players/{{ player.battletag }}/refresh" class="ml-auto">
+        <button type="submit" class="text-xs text-gray-500 hover:text-gray-300 transition-colors">Refresh</button>
+      </form>
+      <form method="post" action="/players/{{ player.battletag }}/delete"
+        onsubmit="return confirm('Remove {{ player.battletag }}?')">
+        <button type="submit" class="text-xs text-red-600 hover:text-red-400 transition-colors">Remove</button>
+      </form>
+    </div>
+
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+{% endblock %}

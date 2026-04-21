@@ -1,0 +1,170 @@
+{% extends "base.html" %}
+{% block title %}{{ player.display_name or player.battletag }} — OW Stats{% endblock %}
+
+{% block content %}
+
+<!-- Back link -->
+<a href="/" class="text-sm text-gray-500 hover:text-gray-300 transition-colors mb-6 inline-block">&larr; All players</a>
+
+<!-- Player header -->
+<div class="flex items-center gap-5 mb-8">
+  {% if player.avatar_url %}
+  <img src="{{ player.avatar_url }}" alt="{{ player.display_name }}"
+    class="w-20 h-20 rounded-full border-2 border-ow-orange object-cover" />
+  {% else %}
+  <div class="w-20 h-20 rounded-full bg-ow-border flex items-center justify-center text-gray-400 font-bold text-3xl">
+    {{ (player.display_name or player.battletag)[0].upper() }}
+  </div>
+  {% endif %}
+  <div>
+    <h1 class="text-3xl font-bold text-white">{{ player.display_name or player.battletag.split('#')[0] }}</h1>
+    <p class="text-gray-500">{{ player.battletag }}</p>
+  </div>
+  <form method="post" action="/players/{{ player.battletag }}/refresh" class="ml-auto">
+    <button type="submit"
+      class="bg-ow-card border border-ow-border hover:border-ow-orange text-sm text-gray-300 px-4 py-2 rounded-lg transition-colors">
+      Refresh stats
+    </button>
+  </form>
+</div>
+
+{% if not snapshots %}
+<p class="text-gray-500 italic">No snapshots yet — stats will appear after the first poll.</p>
+{% else %}
+
+{% set latest = snapshots[0] %}
+
+<!-- Current ranks -->
+<section class="mb-8">
+  <h2 class="text-lg font-semibold text-white mb-3">Current Competitive Ranks</h2>
+  <div class="flex flex-wrap gap-3">
+    {% for role, rank in [('Tank', latest.rank_tank), ('Damage', latest.rank_damage), ('Support', latest.rank_support), ('Open Queue', latest.rank_open)] %}
+    {% if rank %}
+    <div class="bg-ow-card border border-ow-border rounded-lg px-4 py-3 text-center min-w-[100px]">
+      <p class="text-xs text-gray-500 mb-1">{{ role }}</p>
+      <p class="font-bold text-white
+        {% set d = rank.split(' ')[0].lower() %}
+        {% if d == 'grandmaster' %}text-red-400
+        {% elif d == 'master' %}text-purple-400
+        {% elif d == 'diamond' %}text-blue-400
+        {% elif d == 'platinum' %}text-cyan-400
+        {% elif d == 'gold' %}text-yellow-400
+        {% elif d == 'silver' %}text-gray-300
+        {% elif d == 'bronze' %}text-amber-600
+        {% elif d == 'champion' %}text-pink-400
+        {% endif %}">{{ rank }}</p>
+    </div>
+    {% endif %}
+    {% endfor %}
+    {% if not latest.rank_tank and not latest.rank_damage and not latest.rank_support and not latest.rank_open %}
+    <p class="text-gray-500 italic">Unranked this season</p>
+    {% endif %}
+  </div>
+</section>
+
+<!-- Career stats summary -->
+<section class="mb-8">
+  <h2 class="text-lg font-semibold text-white mb-3">Career Stats (Latest Snapshot)</h2>
+  <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
+    {% for label, value in [
+        ('Win Rate', (("%.1f"|format(latest.win_rate * 100)) ~ '%') if latest.win_rate is not none else '—'),
+        ('K/D/A', ("%.2f"|format(latest.kda)) if latest.kda is not none else '—'),
+        ('Games Played', latest.games_played if latest.games_played is not none else '—'),
+        ('Wins', latest.games_won if latest.games_won is not none else '—'),
+    ] %}
+    <div class="bg-ow-card border border-ow-border rounded-lg p-4 text-center">
+      <p class="text-2xl font-bold text-ow-orange">{{ value }}</p>
+      <p class="text-xs text-gray-500 mt-1">{{ label }}</p>
+    </div>
+    {% endfor %}
+  </div>
+</section>
+
+<!-- Top heroes -->
+{% if latest.top_heroes %}
+<section class="mb-8">
+  <h2 class="text-lg font-semibold text-white mb-3">Top Heroes</h2>
+  <div class="bg-ow-card border border-ow-border rounded-xl overflow-hidden">
+    <table class="w-full text-sm">
+      <thead class="bg-ow-border text-gray-400 text-xs uppercase">
+        <tr>
+          <th class="px-4 py-3 text-left">Hero</th>
+          <th class="px-4 py-3 text-right">Time Played</th>
+          <th class="px-4 py-3 text-right">Win Rate</th>
+          <th class="px-4 py-3 text-right">K/D/A</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-ow-border">
+        {% for hero in latest.top_heroes %}
+        <tr class="hover:bg-ow-border transition-colors">
+          <td class="px-4 py-3 font-medium text-white">{{ hero.name }}</td>
+          <td class="px-4 py-3 text-right text-gray-400">
+            {{ (hero.time_played // 3600) }}h {{ ((hero.time_played % 3600) // 60) }}m
+          </td>
+          <td class="px-4 py-3 text-right
+            {% if hero.win_rate is not none and hero.win_rate >= 0.55 %}text-green-400
+            {% elif hero.win_rate is not none and hero.win_rate < 0.45 %}text-red-400
+            {% else %}text-gray-400{% endif %}">
+            {% if hero.win_rate is not none %}{{ "%.1f"|format(hero.win_rate * 100) }}%{% else %}—{% endif %}
+          </td>
+          <td class="px-4 py-3 text-right text-gray-400">
+            {% if hero.kda is not none %}{{ "%.2f"|format(hero.kda) }}{% else %}—{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endif %}
+
+<!-- Snapshot history -->
+<section>
+  <h2 class="text-lg font-semibold text-white mb-3">Snapshot History</h2>
+  <div class="bg-ow-card border border-ow-border rounded-xl overflow-x-auto">
+    <table class="w-full text-sm">
+      <thead class="bg-ow-border text-gray-400 text-xs uppercase">
+        <tr>
+          <th class="px-4 py-3 text-left">Fetched</th>
+          <th class="px-4 py-3 text-right">Games</th>
+          <th class="px-4 py-3 text-right">Wins</th>
+          <th class="px-4 py-3 text-right">Win Rate</th>
+          <th class="px-4 py-3 text-right">K/D/A</th>
+          <th class="px-4 py-3 text-left">Ranks</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-ow-border">
+        {% for snap in snapshots %}
+        <tr class="hover:bg-ow-border transition-colors {% if loop.first %}bg-ow-border/50{% endif %}">
+          <td class="px-4 py-3 text-gray-400 whitespace-nowrap">
+            {{ snap.fetched_at.strftime('%b %d, %Y %H:%M') }}
+            {% if loop.first %}<span class="ml-1 text-ow-orange text-xs">latest</span>{% endif %}
+          </td>
+          <td class="px-4 py-3 text-right text-gray-300">{{ snap.games_played or '—' }}</td>
+          <td class="px-4 py-3 text-right text-gray-300">{{ snap.games_won or '—' }}</td>
+          <td class="px-4 py-3 text-right
+            {% if snap.win_rate is not none and snap.win_rate >= 0.55 %}text-green-400
+            {% elif snap.win_rate is not none and snap.win_rate < 0.45 %}text-red-400
+            {% else %}text-gray-400{% endif %}">
+            {% if snap.win_rate is not none %}{{ "%.1f"|format(snap.win_rate * 100) }}%{% else %}—{% endif %}
+          </td>
+          <td class="px-4 py-3 text-right text-gray-400">
+            {% if snap.kda is not none %}{{ "%.2f"|format(snap.kda) }}{% else %}—{% endif %}
+          </td>
+          <td class="px-4 py-3 text-xs text-gray-500">
+            {% set ranks = [] %}
+            {% if snap.rank_tank %}{% set _ = ranks.append('T:' ~ snap.rank_tank) %}{% endif %}
+            {% if snap.rank_damage %}{% set _ = ranks.append('D:' ~ snap.rank_damage) %}{% endif %}
+            {% if snap.rank_support %}{% set _ = ranks.append('S:' ~ snap.rank_support) %}{% endif %}
+            {{ ranks | join(' · ') or 'Unranked' }}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+{% endif %}
+
+{% endblock %}
