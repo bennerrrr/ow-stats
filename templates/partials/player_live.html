@@ -1,0 +1,136 @@
+{# Snapshot data for Chart.js — read by main template JS, not executed #}
+<script type="application/json" id="snapshot-data">{{ snapshots_json | safe }}</script>
+
+{% set latest = snapshots[0] %}
+
+<!-- Current ranks -->
+<section class="mb-8">
+  <h2 class="text-lg font-semibold text-white mb-3">Current Competitive Ranks</h2>
+  <div class="flex flex-wrap gap-3">
+    {% for role, rank in [('Tank', latest.rank_tank), ('Damage', latest.rank_damage), ('Support', latest.rank_support), ('Open Queue', latest.rank_open)] %}
+    {% if rank %}
+    <div class="bg-ow-card border border-ow-border rounded-lg px-4 py-3 text-center min-w-[100px]">
+      <p class="text-xs text-gray-500 mb-1">{{ role }}</p>
+      <p class="font-bold
+        {% set d = rank.split(' ')[0].lower() %}
+        {% if d == 'grandmaster' %}text-red-400
+        {% elif d == 'master' %}text-purple-400
+        {% elif d == 'diamond' %}text-blue-400
+        {% elif d == 'platinum' %}text-cyan-400
+        {% elif d == 'gold' %}text-yellow-400
+        {% elif d == 'silver' %}text-gray-300
+        {% elif d == 'bronze' %}text-amber-600
+        {% elif d == 'champion' %}text-pink-400
+        {% else %}text-white{% endif %}">{{ rank }}</p>
+    </div>
+    {% endif %}
+    {% endfor %}
+    {% if not latest.rank_tank and not latest.rank_damage and not latest.rank_support and not latest.rank_open %}
+    <p class="text-gray-500 italic">Unranked this season</p>
+    {% endif %}
+  </div>
+</section>
+
+<!-- Gamemode tabs -->
+{% set gbm = latest.stats_by_gamemode or {} %}
+<div class="mb-6">
+  <div class="flex gap-1 border-b border-ow-border">
+    {% for key, label in [('all', 'All Modes'), ('competitive', 'Competitive'), ('quickplay', 'Quick Play')] %}
+    <button onclick="switchTab('{{ key }}')" id="tab-{{ key }}"
+      class="px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px
+        {% if key == 'all' %}border-ow-orange text-ow-orange{% else %}border-transparent text-gray-400 hover:text-gray-200{% endif %}">
+      {{ label }}
+    </button>
+    {% endfor %}
+  </div>
+</div>
+
+<div id="panel-all">
+  {% set s = latest %}{% include "partials/stats_panel.html" %}
+</div>
+<div id="panel-competitive" class="hidden">
+  {% if gbm.competitive and gbm.competitive.games_played %}
+    {% set s = gbm.competitive %}{% include "partials/stats_panel.html" %}
+  {% else %}
+    <p class="text-gray-500 italic mb-8">No competitive data in this snapshot.</p>
+  {% endif %}
+</div>
+<div id="panel-quickplay" class="hidden">
+  {% if gbm.quickplay and gbm.quickplay.games_played %}
+    {% set s = gbm.quickplay %}{% include "partials/stats_panel.html" %}
+  {% else %}
+    <p class="text-gray-500 italic mb-8">No quick play data in this snapshot.</p>
+  {% endif %}
+</div>
+
+<!-- Stats over time chart -->
+<section class="mb-8">
+  <h2 class="text-lg font-semibold text-white mb-3">Stats Over Time</h2>
+  <div class="bg-ow-card border border-ow-border rounded-xl p-4">
+    {% if snapshots | length >= 2 %}
+    <div style="position: relative; height: 240px;">
+      <canvas id="stats-chart"></canvas>
+    </div>
+    {% else %}
+    <p class="text-sm text-gray-500 italic text-center py-10">Chart will appear after a few more snapshots.</p>
+    {% endif %}
+  </div>
+</section>
+
+<!-- Snapshot history (collapsible) -->
+<section>
+  <div class="flex items-center justify-between mb-3">
+    <h2 class="text-lg font-semibold text-white">
+      Snapshot History
+      <span class="text-sm font-normal text-gray-500 ml-1">({{ snapshots | length }})</span>
+    </h2>
+    <button id="history-toggle" onclick="toggleHistory()"
+      class="text-xs text-ow-blue hover:text-blue-300 transition-colors px-2 py-1 rounded border border-ow-border">
+      ▲ Hide
+    </button>
+  </div>
+  <div id="history-table">
+    <div class="bg-ow-card border border-ow-border rounded-xl overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead class="bg-ow-border text-gray-400 text-xs uppercase">
+          <tr>
+            <th class="px-4 py-3 text-left">Fetched</th>
+            <th class="px-4 py-3 text-right">Games</th>
+            <th class="px-4 py-3 text-right">Wins</th>
+            <th class="px-4 py-3 text-right">Win Rate</th>
+            <th class="px-4 py-3 text-right">K/D/A</th>
+            <th class="px-4 py-3 text-left">Ranks</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-ow-border">
+          {% for snap in snapshots %}
+          <tr class="hover:bg-ow-border/60 transition-colors {% if loop.first %}bg-ow-border/40{% endif %}">
+            <td class="px-4 py-3 text-gray-400 whitespace-nowrap">
+              {{ snap.fetched_at.strftime('%b %d, %Y %H:%M') }}
+              {% if loop.first %}<span class="ml-1 text-ow-orange text-xs">latest</span>{% endif %}
+            </td>
+            <td class="px-4 py-3 text-right text-gray-300">{{ snap.games_played or '—' }}</td>
+            <td class="px-4 py-3 text-right text-gray-300">{{ snap.games_won or '—' }}</td>
+            <td class="px-4 py-3 text-right
+              {% if snap.win_rate is not none and snap.win_rate >= 0.55 %}text-green-400
+              {% elif snap.win_rate is not none and snap.win_rate < 0.45 %}text-red-400
+              {% else %}text-gray-400{% endif %}">
+              {% if snap.win_rate is not none %}{{ "%.1f"|format(snap.win_rate * 100) }}%{% else %}—{% endif %}
+            </td>
+            <td class="px-4 py-3 text-right text-gray-400">
+              {% if snap.kda is not none %}{{ "%.2f"|format(snap.kda) }}{% else %}—{% endif %}
+            </td>
+            <td class="px-4 py-3 text-xs text-gray-500">
+              {% set ranks = [] %}
+              {% if snap.rank_tank %}{% set _ = ranks.append('T:' ~ snap.rank_tank) %}{% endif %}
+              {% if snap.rank_damage %}{% set _ = ranks.append('D:' ~ snap.rank_damage) %}{% endif %}
+              {% if snap.rank_support %}{% set _ = ranks.append('S:' ~ snap.rank_support) %}{% endif %}
+              {{ ranks | join(' · ') or 'Unranked' }}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
