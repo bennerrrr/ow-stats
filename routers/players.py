@@ -1,5 +1,6 @@
 import asyncio
 import json
+from datetime import timezone
 from fastapi import APIRouter, Depends, Request, Form, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
@@ -8,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from database import get_db
 from models import Player, StatSnapshot
-from ow_client import fetch_player, ProfilePrivateError, PlayerNotFoundError, OverFastError
+from ow_client import fetch_player, ProfilePrivateError, PlayerNotFoundError, OverFastError, HERO_ROLES
 from scheduler import snapshot_player
 
 router = APIRouter()
@@ -16,17 +17,86 @@ templates = Jinja2Templates(directory="templates")
 templates.env.filters["urltag"] = lambda t: t.replace("#", "%23")
 
 
+_ROLE_ORDER = ["tank", "damage", "support"]
+_ROLE_LABELS = {"tank": "Tank", "damage": "Damage", "support": "Support"}
+_ROLE_COLORS = {"tank": "blue", "damage": "red", "support": "green"}
+
+
 def _snapshots_to_json(snapshots) -> str:
-    """Serialize snapshots oldest-first for Chart.js consumption."""
-    return json.dumps([
-        {
-            "date": s.fetched_at.strftime("%b %d %H:%M"),
+    """Bucket snapshots into 12-hour AM/PM slots, oldest-first, for Chart.js."""
+    buckets: dict = {}
+    for s in snapshots:
+        dt = s.fetched_at
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        half = (dt.hour // 12) * 12
+        key = dt.replace(hour=half, minute=0, second=0, microsecond=0)
+        if key not in buckets or dt > buckets[key][0]:
+            buckets[key] = (dt, s)
+
+    result = []
+    for bucket_dt in sorted(buckets):
+        _, s = buckets[bucket_dt]
+        period = "AM" if bucket_dt.hour == 0 else "PM"
+        result.append({
+            "date": f"{bucket_dt.strftime('%b %d')} {period}",
             "win_rate": round(s.win_rate * 100, 1) if s.win_rate is not None else None,
             "kda": round(s.kda, 2) if s.kda is not None else None,
             "games_played": s.games_played,
-        }
-        for s in reversed(list(snapshots))
-    ])
+        })
+    return json.dumps(result)
+
+
+def _compute_role_stats(top_heroes: list | None) -> list[dict]:
+    """Aggregate hero stats by role, weighted by time played."""
+    if not top_heroes:
+        return []
+    acc: dict[str, dict] = {}
+    for h in top_heroes:
+        role = HERO_ROLES.get((h.get("hero") or "").lower())
+        if not role:
+            continue
+        if role not in acc:
+            acc[role] = {"tp": 0,
+                         "kda_w": 0.0, "kda_t": 0,
+                         "wr_w": 0.0,  "wr_t": 0,
+                         "dmg_w": 0.0, "dmg_t": 0,
+                         "heal_w": 0.0, "heal_t": 0,
+                         "elim_w": 0.0, "elim_t": 0}
+        r = acc[role]
+        tp = h.get("time_played") or 0
+        r["tp"] += tp
+        if tp > 0:
+            for val_key, w_key, t_key in [
+                ("kda",                    "kda_w",  "kda_t"),
+                ("win_rate",               "wr_w",   "wr_t"),
+                ("damage_per_10_min",      "dmg_w",  "dmg_t"),
+                ("healing_per_10_min",     "heal_w", "heal_t"),
+                ("eliminations_per_10_min","elim_w", "elim_t"),
+            ]:
+                v = h.get(val_key)
+                if v is not None:
+                    r[w_key] += v * tp
+                    r[t_key] += tp
+
+    result = []
+    for role in _ROLE_ORDER:
+        if role not in acc or acc[role]["tp"] == 0:
+            continue
+        r = acc[role]
+        def wavg(w, t): return round(w / t, 2) if t > 0 else None
+        result.append({
+            "role":               _ROLE_LABELS[role],
+            "role_key":           role,
+            "color":              _ROLE_COLORS[role],
+            "time_played":        r["tp"],
+            "kda":                wavg(r["kda_w"],  r["kda_t"]),
+            "win_rate":           round(r["wr_w"] / r["wr_t"] * 100, 1) if r["wr_t"] > 0 else None,
+            "damage_per_10_min":  round(r["dmg_w"]  / r["dmg_t"])  if r["dmg_t"]  > 0 else None,
+            "healing_per_10_min": round(r["heal_w"] / r["heal_t"]) if r["heal_t"] > 0 else None,
+            "elims_per_10_min":   round(r["elim_w"] / r["elim_t"], 1) if r["elim_t"] > 0 else None,
+        })
+    return result
 
 
 @router.get("/", response_class=HTMLResponse)
@@ -64,12 +134,14 @@ async def player_detail(request: Request, battletag: str, db: AsyncSession = Dep
     )
     snapshots = snaps_result.scalars().all()
 
+    role_stats = _compute_role_stats(snapshots[0].top_heroes if snapshots else None)
     return templates.TemplateResponse(
         "player.html", {
             "request": request,
             "player": player,
             "snapshots": snapshots,
             "snapshots_json": _snapshots_to_json(snapshots),
+            "role_stats": role_stats,
         }
     )
 
@@ -140,12 +212,14 @@ async def refresh_player(battletag: str, request: Request, db: AsyncSession = De
             .limit(30)
         )
         snapshots = snaps_result.scalars().all()
+        role_stats = _compute_role_stats(snapshots[0].top_heroes if snapshots else None)
         return templates.TemplateResponse(
             "partials/player_live.html", {
                 "request": request,
                 "player": player,
                 "snapshots": snapshots,
                 "snapshots_json": _snapshots_to_json(snapshots),
+                "role_stats": role_stats,
             }
         )
 

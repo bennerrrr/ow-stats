@@ -50,6 +50,25 @@ class PlayerData:
     raw_stats: dict = field(default_factory=dict)
 
 
+HERO_ROLES: dict[str, str] = {
+    # Tank
+    "dva": "tank", "doomfist": "tank", "junker-queen": "tank", "mauga": "tank",
+    "orisa": "tank", "ramattra": "tank", "reinhardt": "tank", "roadhog": "tank",
+    "sigma": "tank", "winston": "tank", "wrecking-ball": "tank", "zarya": "tank",
+    "hazard": "tank",
+    # Damage
+    "ashe": "damage", "bastion": "damage", "cassidy": "damage", "echo": "damage",
+    "genji": "damage", "hanzo": "damage", "junkrat": "damage", "mei": "damage",
+    "pharah": "damage", "reaper": "damage", "sojourn": "damage", "soldier-76": "damage",
+    "sombra": "damage", "symmetra": "damage", "torbjorn": "damage", "tracer": "damage",
+    "widowmaker": "damage", "venture": "damage", "freja": "damage",
+    # Support
+    "ana": "support", "baptiste": "support", "brigitte": "support", "illari": "support",
+    "kiriko": "support", "lifeweaver": "support", "lucio": "support", "mercy": "support",
+    "moira": "support", "zenyatta": "support", "juno": "support",
+}
+
+
 def _battletag_to_url(battletag: str) -> str:
     return battletag.replace("#", "-")
 
@@ -102,7 +121,7 @@ def _parse_stats(data: dict) -> dict:
     ] if isinstance(heroes_raw, dict) else heroes_raw
 
     top_heroes = []
-    for h in sorted(hero_items, key=lambda x: x.get("time_played") or 0, reverse=True)[:5]:
+    for h in sorted(hero_items, key=lambda x: x.get("time_played") or 0, reverse=True)[:15]:
         raw_hero_winrate = h.get("winrate")
         top_heroes.append({
             "hero": h.get("hero", ""),
@@ -110,6 +129,9 @@ def _parse_stats(data: dict) -> dict:
             "time_played": h.get("time_played") or 0,
             "win_rate": raw_hero_winrate / 100.0 if raw_hero_winrate is not None else None,
             "kda": h.get("kda"),
+            "damage_per_10_min": h.get("damage_per_10_min"),
+            "healing_per_10_min": h.get("healing_per_10_min"),
+            "eliminations_per_10_min": h.get("eliminations_per_10_min"),
         })
 
     return {
@@ -119,6 +141,9 @@ def _parse_stats(data: dict) -> dict:
         "win_rate": win_rate,
         "kda": kda,
         "top_heroes": top_heroes,
+        "damage_per_10_min": general.get("damage_per_10_min"),
+        "healing_per_10_min": general.get("healing_per_10_min"),
+        "eliminations_per_10_min": general.get("eliminations_per_10_min"),
     }
 
 

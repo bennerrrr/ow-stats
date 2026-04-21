@@ -3,16 +3,31 @@
 {% set games_played = s.games_played if s.games_played is defined else none %}
 {% set games_won = s.games_won if s.games_won is defined else none %}
 {% set top_heroes = s.top_heroes if s.top_heroes is defined else [] %}
+{# Per-10-min stats: present on gamemode dicts from _parse_stats, absent on ORM snapshots (use raw_stats fallback) #}
+{% if s is mapping %}
+  {% set dmg_per10  = s.damage_per_10_min %}
+  {% set heal_per10 = s.healing_per_10_min %}
+  {% set elim_per10 = s.eliminations_per_10_min %}
+{% else %}
+  {% set _gen = (s.raw_stats or {}).get('general', {}) %}
+  {% set dmg_per10  = _gen.get('damage_per_10_min') %}
+  {% set heal_per10 = _gen.get('healing_per_10_min') %}
+  {% set elim_per10 = _gen.get('eliminations_per_10_min') %}
+{% endif %}
 
 <!-- Career stats -->
 <section class="mb-8">
   <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
-    {% for label, value in [
-        ('Win Rate', (("%.1f"|format(win_rate * 100)) ~ '%') if win_rate is not none else '—'),
-        ('K/D/A', ("%.2f"|format(kda)) if kda is not none else '—'),
+    {% set stats_cells = [
+        ('Win Rate',     (("%.1f"|format(win_rate * 100)) ~ '%') if win_rate is not none else '—'),
+        ('K/D/A',        ("%.2f"|format(kda)) if kda is not none else '—'),
         ('Games Played', games_played if games_played is not none else '—'),
-        ('Wins', games_won if games_won is not none else '—'),
+        ('Wins',         games_won if games_won is not none else '—'),
     ] %}
+    {% if elim_per10 is not none %}{% set stats_cells = stats_cells + [('Elims/10min', "%.1f"|format(elim_per10))] %}{% endif %}
+    {% if dmg_per10  is not none %}{% set stats_cells = stats_cells + [('Dmg/10min',   dmg_per10  | int)] %}{% endif %}
+    {% if heal_per10 is not none %}{% set stats_cells = stats_cells + [('Heal/10min',  heal_per10 | int)] %}{% endif %}
+    {% for label, value in stats_cells %}
     <div class="bg-ow-card border border-ow-border rounded-lg p-4 text-center">
       <p class="text-2xl font-bold text-ow-orange">{{ value }}</p>
       <p class="text-xs text-gray-500 mt-1">{{ label }}</p>
@@ -36,7 +51,7 @@
         </tr>
       </thead>
       <tbody class="divide-y divide-ow-border">
-        {% for hero in top_heroes %}
+        {% for hero in top_heroes[:5] %}
         {% set hero_wr = hero.win_rate if hero is mapping else none %}
         {% set hero_kda = hero.kda if hero is mapping else none %}
         {% set hero_name = hero.name if hero is mapping else hero %}

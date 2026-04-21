@@ -63,6 +63,66 @@
   {% endif %}
 </div>
 
+<!-- Performance by Role -->
+{% if role_stats %}
+<section class="mb-8">
+  <h2 class="text-lg font-semibold text-white mb-3">Performance by Role</h2>
+  <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+    {% for r in role_stats %}
+    <div class="bg-ow-card border border-ow-border rounded-xl p-4">
+
+      <div class="flex items-center justify-between mb-3">
+        <span class="text-sm font-bold uppercase tracking-wide
+          {% if r.role_key == 'tank' %}text-blue-400
+          {% elif r.role_key == 'damage' %}text-red-400
+          {% else %}text-green-400{% endif %}">
+          {% if r.role_key == 'tank' %}🛡 {% elif r.role_key == 'damage' %}⚔ {% else %}💚 {% endif %}{{ r.role }}
+        </span>
+        <span class="text-xs text-gray-500">{{ (r.time_played // 3600) }}h {{ ((r.time_played % 3600) // 60) }}m</span>
+      </div>
+
+      <div class="space-y-2 text-sm">
+        {% if r.kda is not none %}
+        <div class="flex justify-between items-center">
+          <span class="text-gray-400">KDA</span>
+          <span class="font-semibold text-white">{{ r.kda }}</span>
+        </div>
+        {% endif %}
+        {% if r.win_rate is not none %}
+        <div class="flex justify-between items-center">
+          <span class="text-gray-400">Win Rate</span>
+          <span class="font-semibold
+            {% if r.win_rate >= 55 %}text-green-400
+            {% elif r.win_rate < 45 %}text-red-400
+            {% else %}text-gray-200{% endif %}">{{ r.win_rate }}%</span>
+        </div>
+        {% endif %}
+        {% if r.elims_per_10_min is not none %}
+        <div class="flex justify-between items-center">
+          <span class="text-gray-400">Elims/10min</span>
+          <span class="font-semibold text-white">{{ r.elims_per_10_min }}</span>
+        </div>
+        {% endif %}
+        {% if r.damage_per_10_min is not none %}
+        <div class="flex justify-between items-center">
+          <span class="text-gray-400">Dmg/10min</span>
+          <span class="font-semibold text-ow-orange">{{ r.damage_per_10_min }}</span>
+        </div>
+        {% endif %}
+        {% if r.healing_per_10_min is not none %}
+        <div class="flex justify-between items-center">
+          <span class="text-gray-400">Heal/10min</span>
+          <span class="font-semibold text-green-300">{{ r.healing_per_10_min }}</span>
+        </div>
+        {% endif %}
+      </div>
+
+    </div>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+
 <!-- Stats over time chart -->
 <section class="mb-8">
   <h2 class="text-lg font-semibold text-white mb-3">Stats Over Time</h2>
