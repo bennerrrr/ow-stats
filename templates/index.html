@@ -130,7 +130,7 @@
     {% endif %}
 
     <!-- Updated timestamp -->
-    <p class="text-xs text-gray-600">Updated {{ snap.fetched_at.strftime('%b %d, %H:%M') }}</p>
+    <p class="text-xs text-gray-600">Updated {{ snap.fetched_at | localdt("%b %d, %H:%M %Z") }}</p>
 
     {% else %}
     <p class="text-sm text-gray-500 italic">Fetching stats…</p>

@@ -214,7 +214,7 @@
           {% for snap in snapshots %}
           <tr class="hover:bg-ow-border/60 transition-colors {% if loop.first %}bg-ow-border/40{% endif %}">
             <td class="px-4 py-3 text-gray-400 whitespace-nowrap">
-              {{ snap.fetched_at.strftime('%b %d, %Y %H:%M') }}
+              {{ snap.fetched_at | localdt }}
               {% if loop.first %}<span class="ml-1 text-ow-orange text-xs">latest</span>{% endif %}
             </td>
             <td class="px-4 py-3 text-right text-gray-300">{{ snap.games_played or '—' }}</td>

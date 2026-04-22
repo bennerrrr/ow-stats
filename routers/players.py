@@ -1,6 +1,8 @@
 import asyncio
 import json
+import os
 from datetime import timezone
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from fastapi import APIRouter, Depends, Request, Form, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
@@ -15,6 +17,20 @@ from scheduler import snapshot_player
 router = APIRouter()
 templates = Jinja2Templates(directory="templates")
 templates.env.filters["urltag"] = lambda t: t.replace("#", "%23")
+
+try:
+    _DISPLAY_TZ = ZoneInfo(os.getenv("DISPLAY_TIMEZONE", "America/New_York"))
+except ZoneInfoNotFoundError:
+    _DISPLAY_TZ = ZoneInfo("UTC")
+
+
+def _to_display_tz(dt):
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(_DISPLAY_TZ)
+
+
+templates.env.filters["localdt"] = lambda dt, fmt="%b %d, %Y %H:%M %Z": _to_display_tz(dt).strftime(fmt)
 
 
 _ROLE_ORDER = ["tank", "damage", "support"]
@@ -31,11 +47,8 @@ def _snapshots_to_json(snapshots) -> str:
         kda = round(s.kda, 2) if s.kda is not None else None
         gp = s.games_played
         if prev is None or (wr, kda, gp) != prev:
-            dt = s.fetched_at
-            if dt.tzinfo is None:
-                dt = dt.replace(tzinfo=timezone.utc)
             result.append({
-                "date": dt.strftime("%b %d %H:%M"),
+                "date": _to_display_tz(s.fetched_at).strftime("%b %d %H:%M %Z"),
                 "win_rate": wr,
                 "kda": kda,
                 "games_played": gp,
@@ -60,16 +73,9 @@ def _compute_sessions(snapshots) -> list[dict]:
         session_wr = round(delta_wins / delta_games * 100, 1)
         kda_delta = round(curr.kda - prev.kda, 2) if (curr.kda is not None and prev.kda is not None) else None
 
-        dt_start = prev.fetched_at
-        dt_end = curr.fetched_at
-        if dt_start.tzinfo is None:
-            dt_start = dt_start.replace(tzinfo=timezone.utc)
-        if dt_end.tzinfo is None:
-            dt_end = dt_end.replace(tzinfo=timezone.utc)
-
         sessions.append({
-            "start": dt_start.strftime("%b %d %H:%M"),
-            "end": dt_end.strftime("%b %d %H:%M"),
+            "start": _to_display_tz(prev.fetched_at).strftime("%b %d %H:%M %Z"),
+            "end": _to_display_tz(curr.fetched_at).strftime("%b %d %H:%M %Z"),
             "games": delta_games,
             "wins": delta_wins,
             "losses": delta_losses,
