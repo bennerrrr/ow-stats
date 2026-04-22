@@ -23,27 +23,24 @@ _ROLE_COLORS = {"tank": "blue", "damage": "red", "support": "green"}
 
 
 def _snapshots_to_json(snapshots) -> str:
-    """Bucket snapshots into 12-hour AM/PM slots, oldest-first, for Chart.js."""
-    buckets: dict = {}
-    for s in snapshots:
-        dt = s.fetched_at
-        if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
-        half = (dt.hour // 12) * 12
-        key = dt.replace(hour=half, minute=0, second=0, microsecond=0)
-        if key not in buckets or dt > buckets[key][0]:
-            buckets[key] = (dt, s)
-
+    """Emit one point per snapshot where tracked stats actually changed, oldest-first."""
     result = []
-    for bucket_dt in sorted(buckets):
-        _, s = buckets[bucket_dt]
-        period = "AM" if bucket_dt.hour == 0 else "PM"
-        result.append({
-            "date": f"{bucket_dt.strftime('%b %d')} {period}",
-            "win_rate": round(s.win_rate * 100, 1) if s.win_rate is not None else None,
-            "kda": round(s.kda, 2) if s.kda is not None else None,
-            "games_played": s.games_played,
-        })
+    prev = None
+    for s in reversed(snapshots):  # snapshots arrive newest-first; iterate oldest-first
+        wr = round(s.win_rate * 100, 1) if s.win_rate is not None else None
+        kda = round(s.kda, 2) if s.kda is not None else None
+        gp = s.games_played
+        if prev is None or (wr, kda, gp) != prev:
+            dt = s.fetched_at
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            result.append({
+                "date": dt.strftime("%b %d %H:%M"),
+                "win_rate": wr,
+                "kda": kda,
+                "games_played": gp,
+            })
+            prev = (wr, kda, gp)
     return json.dumps(result)
 
 
@@ -130,7 +127,7 @@ async def player_detail(request: Request, battletag: str, db: AsyncSession = Dep
         select(StatSnapshot)
         .where(StatSnapshot.player_id == player.id)
         .order_by(StatSnapshot.fetched_at.desc())
-        .limit(30)
+        .limit(100)
     )
     snapshots = snaps_result.scalars().all()
 
@@ -209,7 +206,7 @@ async def refresh_player(battletag: str, request: Request, db: AsyncSession = De
             select(StatSnapshot)
             .where(StatSnapshot.player_id == player.id)
             .order_by(StatSnapshot.fetched_at.desc())
-            .limit(30)
+            .limit(100)
         )
         snapshots = snaps_result.scalars().all()
         role_stats = _compute_role_stats(snapshots[0].top_heroes if snapshots else None)
