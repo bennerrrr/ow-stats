@@ -306,6 +306,28 @@ async def on_ready():
 
 
 # ---------------------------------------------------------------------------
+# Autocomplete helpers
+# ---------------------------------------------------------------------------
+
+async def _tracked_players_autocomplete(
+    interaction: discord.Interaction,
+    current: str,
+) -> list[app_commands.Choice[str]]:
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(select(Player).order_by(Player.battletag))
+        players = result.scalars().all()
+
+    choices = []
+    for p in players:
+        display = p.display_name or p.battletag.split("#")[0]
+        label = f"{display} ({p.battletag})"
+        if not current or current.lower() in label.lower():
+            choices.append(app_commands.Choice(name=label[:100], value=p.battletag))
+
+    return choices[:25]
+
+
+# ---------------------------------------------------------------------------
 # Slash commands
 # ---------------------------------------------------------------------------
 
@@ -374,6 +396,7 @@ async def cmd_add_player(interaction: discord.Interaction, battletag: str):
 
 @bot.tree.command(name="remove_player", description="Stop tracking an Overwatch 2 player")
 @app_commands.describe(battletag="Player battletag to remove")
+@app_commands.autocomplete(battletag=_tracked_players_autocomplete)
 async def cmd_remove_player(interaction: discord.Interaction, battletag: str):
     battletag = battletag.strip()
     async with AsyncSessionLocal() as session:
@@ -389,36 +412,68 @@ async def cmd_remove_player(interaction: discord.Interaction, battletag: str):
     await interaction.response.send_message(f"Stopped tracking **{battletag}**.")
 
 
-@bot.tree.command(name="stats", description="Show the latest stats panel for a tracked player")
-@app_commands.describe(battletag="Player battletag")
+@bot.tree.command(name="stats", description="Show stats for any player — tracked players load instantly")
+@app_commands.describe(battletag="Player battletag (e.g. Username#1234) — tracked players autocomplete")
+@app_commands.autocomplete(battletag=_tracked_players_autocomplete)
 async def cmd_stats(interaction: discord.Interaction, battletag: str):
     await interaction.response.defer()
     battletag = battletag.strip()
 
+    # Try the local DB first (tracked players respond instantly)
     async with AsyncSessionLocal() as session:
         result = await session.execute(select(Player).where(Player.battletag == battletag))
         player = result.scalar_one_or_none()
-        if not player:
-            await interaction.followup.send(
-                f"**{battletag}** is not tracked. Use `/add_player` first.", ephemeral=True
+        if player:
+            snap_result = await session.execute(
+                select(StatSnapshot)
+                .where(StatSnapshot.player_id == player.id)
+                .order_by(StatSnapshot.fetched_at.desc())
+                .limit(1)
             )
-            return
+            snapshot = snap_result.scalar_one_or_none()
+            if snapshot:
+                embed = build_stats_embed(player, snapshot)
+                await interaction.followup.send(embed=embed)
+                return
 
-        snap_result = await session.execute(
-            select(StatSnapshot)
-            .where(StatSnapshot.player_id == player.id)
-            .order_by(StatSnapshot.fetched_at.desc())
-            .limit(1)
+    # Not tracked (or no snapshot yet) — live fetch from the API
+    try:
+        data = await fetch_player(battletag)
+    except PlayerNotFoundError:
+        await interaction.followup.send(
+            f"Player `{battletag}` not found. Check the format — should be `Username#1234`.",
+            ephemeral=True,
         )
-        snapshot = snap_result.scalar_one_or_none()
-        if not snapshot:
-            await interaction.followup.send(
-                f"No stats yet for **{battletag}** — check back after the next poll."
-            )
-            return
+        return
+    except ProfilePrivateError:
+        await interaction.followup.send(f"**{battletag}**'s profile is private.", ephemeral=True)
+        return
+    except OverFastError as e:
+        await interaction.followup.send(f"API error for `{battletag}`: {e}", ephemeral=True)
+        return
 
-        embed = build_stats_embed(player, snapshot)
-        await interaction.followup.send(embed=embed)
+    temp_player = Player(battletag=battletag, display_name=data.username, avatar_url=data.avatar)
+    temp_snapshot = StatSnapshot(
+        player_id=0,
+        fetched_at=datetime.now(timezone.utc),
+        rank_tank=data.rank_tank,
+        rank_damage=data.rank_damage,
+        rank_support=data.rank_support,
+        rank_open=data.rank_open,
+        games_played=data.games_played,
+        games_won=data.games_won,
+        games_lost=data.games_lost,
+        kda=data.kda,
+        win_rate=data.win_rate,
+        top_heroes=[
+            {"hero": h.hero, "name": h.name, "time_played": h.time_played,
+             "win_rate": h.win_rate, "kda": h.kda}
+            for h in data.top_heroes
+        ],
+    )
+    embed = build_stats_embed(temp_player, temp_snapshot)
+    embed.set_footer(text=f"Live fetch (not tracked) · {temp_snapshot.fetched_at.strftime('%Y-%m-%d %H:%M UTC')}")
+    await interaction.followup.send(embed=embed)
 
 
 @bot.tree.command(name="players", description="List all currently tracked players")
