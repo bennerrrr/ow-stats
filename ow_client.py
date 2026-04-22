@@ -28,6 +28,9 @@ class HeroStat:
     time_played: int  # seconds
     win_rate: Optional[float]
     kda: Optional[float]
+    damage_per_10_min: Optional[int] = None
+    healing_per_10_min: Optional[int] = None
+    eliminations_per_10_min: Optional[float] = None
 
 
 @dataclass

@@ -355,7 +355,10 @@ async def cmd_add_player(interaction: discord.Interaction, battletag: str):
             win_rate=data.win_rate,
             top_heroes=[
                 {"hero": h.hero, "name": h.name, "time_played": h.time_played,
-                 "win_rate": h.win_rate, "kda": h.kda}
+                 "win_rate": h.win_rate, "kda": h.kda,
+                 "damage_per_10_min": h.damage_per_10_min,
+                 "healing_per_10_min": h.healing_per_10_min,
+                 "eliminations_per_10_min": h.eliminations_per_10_min}
                 for h in data.top_heroes
             ],
             stats_by_gamemode=data.stats_by_gamemode,
