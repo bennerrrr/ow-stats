@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import os
+from collections.abc import Callable, Coroutine
 from datetime import datetime, timezone
 
 import discord
@@ -32,6 +33,18 @@ RANK_EMOJIS = {
 
 intents = discord.Intents.default()
 bot = commands.Bot(command_prefix="!", intents=intents)
+
+_notification_queue: list[Callable[[], Coroutine]] = []
+
+
+async def _flush_notification_queue() -> None:
+    if not _notification_queue:
+        return
+    queued = _notification_queue.copy()
+    _notification_queue.clear()
+    logger.info("Flushing %d queued notification(s) after reconnect", len(queued))
+    for factory in queued:
+        await factory()
 
 
 # ---------------------------------------------------------------------------
@@ -246,6 +259,8 @@ async def send_game_report(
     new: dict,
 ) -> None:
     if not bot.is_ready():
+        logger.warning("Bot not ready — queuing game report for %s (will send on reconnect)", battletag)
+        _notification_queue.append(lambda: send_game_report(player_name, battletag, avatar_url, prev, new))
         return
 
     embed = build_game_report_embed(player_name, battletag, avatar_url, prev, new)
@@ -273,6 +288,8 @@ async def send_stats_update(
     new: dict,
 ) -> None:
     if not bot.is_ready():
+        logger.warning("Bot not ready — queuing stats update for %s (will send on reconnect)", battletag)
+        _notification_queue.append(lambda: send_stats_update(player_name, battletag, avatar_url, prev, new))
         return
 
     embed = build_stats_update_embed(player_name, battletag, avatar_url, prev, new)
@@ -303,6 +320,13 @@ async def on_ready():
         logger.info("Discord bot ready as %s — synced %d slash commands", bot.user, len(synced))
     except Exception as e:
         logger.error("Failed to sync slash commands: %s", e)
+    await _flush_notification_queue()
+
+
+@bot.event
+async def on_resumed():
+    logger.info("Discord session resumed")
+    await _flush_notification_queue()
 
 
 # ---------------------------------------------------------------------------
