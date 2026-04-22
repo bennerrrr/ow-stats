@@ -164,8 +164,8 @@
     const label     = document.getElementById('refresh-label');
     const liveStats = document.getElementById('live-stats');
 
-    // Remember collapse state before swap
-    const historyWasHidden = document.getElementById('history-table')?.classList.contains('hidden');
+    // Remember expand state before swap (default is hidden)
+    const historyWasVisible = !document.getElementById('history-table')?.classList.contains('hidden');
 
     btn.disabled = true;
     label.textContent = 'Refreshing…';
@@ -180,11 +180,11 @@
       if (res.ok && liveStats) {
         liveStats.innerHTML = await res.text();
 
-        // Restore history collapse state
-        if (historyWasHidden) {
-          document.getElementById('history-table')?.classList.add('hidden');
+        // Restore history expand state (template default is hidden)
+        if (historyWasVisible) {
+          document.getElementById('history-table')?.classList.remove('hidden');
           const toggle = document.getElementById('history-toggle');
-          if (toggle) toggle.textContent = '▼ Show';
+          if (toggle) toggle.textContent = '▲ Hide';
         }
 
         initChart();

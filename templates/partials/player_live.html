@@ -137,6 +137,54 @@
   </div>
 </section>
 
+<!-- Session history -->
+{% if sessions %}
+<section class="mb-8">
+  <h2 class="text-lg font-semibold text-white mb-3">Session History
+    <span class="text-sm font-normal text-gray-500 ml-1">({{ sessions | length }})</span>
+  </h2>
+  <div class="bg-ow-card border border-ow-border rounded-xl overflow-x-auto">
+    <table class="w-full text-sm">
+      <thead class="bg-ow-border text-gray-400 text-xs uppercase">
+        <tr>
+          <th class="px-4 py-3 text-left">Date</th>
+          <th class="px-4 py-3 text-right">Games</th>
+          <th class="px-4 py-3 text-right">Wins</th>
+          <th class="px-4 py-3 text-right">Losses</th>
+          <th class="px-4 py-3 text-right">Session WR</th>
+          <th class="px-4 py-3 text-right">KDA Change</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-ow-border">
+        {% for sess in sessions %}
+        <tr class="hover:bg-ow-border/60 transition-colors {% if loop.first %}bg-ow-border/40{% endif %}">
+          <td class="px-4 py-3 text-gray-400 whitespace-nowrap">
+            {{ sess.start }}
+            {% if loop.first %}<span class="ml-1 text-ow-orange text-xs">latest</span>{% endif %}
+          </td>
+          <td class="px-4 py-3 text-right text-gray-300">{{ sess.games }}</td>
+          <td class="px-4 py-3 text-right text-green-400">{{ sess.wins }}</td>
+          <td class="px-4 py-3 text-right text-red-400">{{ sess.losses }}</td>
+          <td class="px-4 py-3 text-right font-semibold
+            {% if sess.win_rate >= 55 %}text-green-400
+            {% elif sess.win_rate < 45 %}text-red-400
+            {% else %}text-gray-200{% endif %}">{{ sess.win_rate }}%</td>
+          <td class="px-4 py-3 text-right
+            {% if sess.kda_delta is not none and sess.kda_delta > 0 %}text-green-400
+            {% elif sess.kda_delta is not none and sess.kda_delta < 0 %}text-red-400
+            {% else %}text-gray-400{% endif %}">
+            {% if sess.kda_delta is not none %}
+              {% if sess.kda_delta > 0 %}+{% endif %}{{ sess.kda_delta }}
+            {% else %}—{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endif %}
+
 <!-- Snapshot history (collapsible) -->
 <section>
   <div class="flex items-center justify-between mb-3">
@@ -146,10 +194,10 @@
     </h2>
     <button id="history-toggle" onclick="toggleHistory()"
       class="text-xs text-ow-blue hover:text-blue-300 transition-colors px-2 py-1 rounded border border-ow-border">
-      ▲ Hide
+      ▼ Show
     </button>
   </div>
-  <div id="history-table">
+  <div id="history-table" class="hidden">
     <div class="bg-ow-card border border-ow-border rounded-xl overflow-x-auto">
       <table class="w-full text-sm">
         <thead class="bg-ow-border text-gray-400 text-xs uppercase">

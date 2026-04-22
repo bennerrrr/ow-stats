@@ -44,6 +44,41 @@ def _snapshots_to_json(snapshots) -> str:
     return json.dumps(result)
 
 
+def _compute_sessions(snapshots) -> list[dict]:
+    """Return per-session deltas between consecutive snapshots where games_played increased."""
+    ordered = list(reversed(snapshots))  # oldest → newest
+    sessions = []
+    for i in range(1, len(ordered)):
+        prev, curr = ordered[i - 1], ordered[i]
+        if curr.games_played is None or prev.games_played is None:
+            continue
+        delta_games = curr.games_played - prev.games_played
+        if delta_games <= 0:
+            continue
+        delta_wins = max(0, (curr.games_won or 0) - (prev.games_won or 0))
+        delta_losses = delta_games - delta_wins
+        session_wr = round(delta_wins / delta_games * 100, 1)
+        kda_delta = round(curr.kda - prev.kda, 2) if (curr.kda is not None and prev.kda is not None) else None
+
+        dt_start = prev.fetched_at
+        dt_end = curr.fetched_at
+        if dt_start.tzinfo is None:
+            dt_start = dt_start.replace(tzinfo=timezone.utc)
+        if dt_end.tzinfo is None:
+            dt_end = dt_end.replace(tzinfo=timezone.utc)
+
+        sessions.append({
+            "start": dt_start.strftime("%b %d %H:%M"),
+            "end": dt_end.strftime("%b %d %H:%M"),
+            "games": delta_games,
+            "wins": delta_wins,
+            "losses": delta_losses,
+            "win_rate": session_wr,
+            "kda_delta": kda_delta,
+        })
+    return list(reversed(sessions))  # most recent first
+
+
 def _compute_role_stats(top_heroes: list | None) -> list[dict]:
     """Aggregate hero stats by role, weighted by time played."""
     if not top_heroes:
@@ -139,6 +174,7 @@ async def player_detail(request: Request, battletag: str, db: AsyncSession = Dep
             "snapshots": snapshots,
             "snapshots_json": _snapshots_to_json(snapshots),
             "role_stats": role_stats,
+            "sessions": _compute_sessions(snapshots),
         }
     )
 
@@ -217,6 +253,7 @@ async def refresh_player(battletag: str, request: Request, db: AsyncSession = De
                 "snapshots": snapshots,
                 "snapshots_json": _snapshots_to_json(snapshots),
                 "role_stats": role_stats,
+                "sessions": _compute_sessions(snapshots),
             }
         )
 
