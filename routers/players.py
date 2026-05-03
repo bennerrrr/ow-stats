@@ -58,18 +58,20 @@ def _snapshots_to_json(snapshots) -> str:
 
 
 def _hll_snapshots_to_json(snapshots) -> str:
-    """HLL: one chart point per snapshot where K/D changed, oldest-first."""
+    """HLL: one chart point per snapshot where kills or XP changed, oldest-first."""
     result = []
-    prev_kd = None
+    prev = (None, None)
     for s in reversed(snapshots):
         gd = s.game_data or {}
-        kd = round(gd["k_d_ratio"], 2) if gd.get("k_d_ratio") is not None else None
-        if kd != prev_kd:
+        kills = gd.get("kills")
+        xp = gd.get("total_xp")
+        if (kills, xp) != prev:
             result.append({
                 "date": _to_display_tz(s.fetched_at).strftime("%b %d %H:%M %Z"),
-                "kd": kd,
+                "kills": kills,
+                "xp": xp,
             })
-            prev_kd = kd
+            prev = (kills, xp)
     return json.dumps(result)
 
 
@@ -107,17 +109,26 @@ def _compute_hll_sessions(snapshots) -> list[dict]:
     sessions = []
     for i in range(1, len(ordered)):
         prev, curr = ordered[i - 1], ordered[i]
-        prev_pt = (prev.game_data or {}).get("playtime_forever")
-        curr_pt = (curr.game_data or {}).get("playtime_forever")
+        pgd, cgd = prev.game_data or {}, curr.game_data or {}
+        prev_pt = pgd.get("playtime_forever")
+        curr_pt = cgd.get("playtime_forever")
         if prev_pt is None or curr_pt is None:
             continue
         delta_minutes = curr_pt - prev_pt
         if delta_minutes <= 0:
             continue
+        prev_kills = pgd.get("kills")
+        curr_kills = cgd.get("kills")
+        kills_delta = (curr_kills - prev_kills) if (curr_kills is not None and prev_kills is not None) else None
+        prev_xp = pgd.get("total_xp")
+        curr_xp = cgd.get("total_xp")
+        xp_delta = (curr_xp - prev_xp) if (curr_xp is not None and prev_xp is not None) else None
         sessions.append({
             "start": _to_display_tz(prev.fetched_at).strftime("%b %d %H:%M %Z"),
             "duration": _fmt_duration(delta_minutes * 60),
-            "duration_seconds": delta_minutes * 60,
+            "duration_minutes": delta_minutes,
+            "kills_delta": kills_delta,
+            "xp_delta": xp_delta,
         })
     return list(reversed(sessions))  # most recent first
 
@@ -191,10 +202,10 @@ def _compute_role_stats(top_heroes: list | None) -> list[dict]:
 
 @router.get("/", response_class=HTMLResponse)
 async def index(request: Request, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(Player).order_by(Player.game, Player.added_at))
+    result = await db.execute(select(Player).order_by(Player.added_at))
     players = result.scalars().all()
 
-    player_data = []
+    ow_players, hll_players = [], []
     for player in players:
         snap_result = await db.execute(
             select(StatSnapshot)
@@ -203,9 +214,17 @@ async def index(request: Request, db: AsyncSession = Depends(get_db)):
             .limit(1)
         )
         latest = snap_result.scalar_one_or_none()
-        player_data.append({"player": player, "snapshot": latest})
+        item = {"player": player, "snapshot": latest}
+        if player.game == "hell_let_loose":
+            hll_players.append(item)
+        else:
+            ow_players.append(item)
 
-    return templates.TemplateResponse("index.html", {"request": request, "players": player_data})
+    return templates.TemplateResponse("index.html", {
+        "request": request,
+        "ow_players": ow_players,
+        "hll_players": hll_players,
+    })
 
 
 @router.get("/players/{battletag:path}", response_class=HTMLResponse)

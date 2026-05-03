@@ -111,27 +111,44 @@
   }
 
   function initHLLChart(canvas, data) {
+    const hasXP = data.some(d => d.xp != null);
+    const datasets = [
+      {
+        label: 'Career Kills',
+        data: data.map(d => d.kills),
+        borderColor: '#5C6BC0',
+        backgroundColor: 'rgba(92,107,192,0.1)',
+        fill: true,
+        yAxisID: 'yKills',
+        tension: 0.3,
+        pointRadius: 4,
+        pointHoverRadius: 6,
+        spanGaps: true,
+      },
+    ];
+    if (hasXP) {
+      datasets.push({
+        label: 'Total XP',
+        data: data.map(d => d.xp),
+        borderColor: '#78909C',
+        backgroundColor: 'transparent',
+        fill: false,
+        yAxisID: 'yXP',
+        tension: 0.3,
+        pointRadius: 3,
+        pointHoverRadius: 5,
+        borderDash: [4, 3],
+        spanGaps: true,
+      });
+    }
+    const axes = { yKills: { position: 'left', color: '#5C6BC0', callback: v => v >= 1000 ? (v/1000).toFixed(1)+'k' : v } };
+    if (hasXP) axes.yXP = { position: 'right', color: '#78909C', callback: v => v >= 1000000 ? (v/1000000).toFixed(1)+'M' : v >= 1000 ? (v/1000).toFixed(0)+'k' : v };
     statsChart = new Chart(canvas, {
       type: 'line',
-      data: {
-        labels: data.map(d => d.date),
-        datasets: [
-          {
-            label: 'K/D Ratio',
-            data: data.map(d => d.kd),
-            borderColor: '#5C6BC0',
-            backgroundColor: 'rgba(92,107,192,0.1)',
-            fill: true,
-            tension: 0.3,
-            pointRadius: 4,
-            pointHoverRadius: 6,
-            spanGaps: true,
-          },
-        ]
-      },
-      options: _chartOptions({
-        y: { position: 'left', color: '#5C6BC0', callback: null },
-      }, (ctx) => ` K/D: ${ctx.parsed.y}`),
+      data: { labels: data.map(d => d.date), datasets },
+      options: _chartOptions(axes, ctx => ctx.dataset.label === 'Career Kills'
+        ? ` Kills: ${ctx.parsed.y?.toLocaleString()}`
+        : ` XP: ${ctx.parsed.y?.toLocaleString()}`),
     });
   }
 
