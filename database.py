@@ -23,10 +23,13 @@ async def init_db():
     async with engine.begin() as conn:
         from models import Player, StatSnapshot, DiscordChannel  # noqa: F401
         await conn.run_sync(Base.metadata.create_all)
-        # Forward migration: add stats_by_gamemode column if not present
-        try:
-            await conn.execute(text(
-                "ALTER TABLE stat_snapshots ADD COLUMN stats_by_gamemode JSON"
-            ))
-        except Exception:
-            pass  # Column already exists
+        for stmt in [
+            "ALTER TABLE stat_snapshots ADD COLUMN stats_by_gamemode JSON",
+            "ALTER TABLE stat_snapshots ADD COLUMN game_data JSON",
+            "ALTER TABLE players ADD COLUMN game VARCHAR NOT NULL DEFAULT 'overwatch'",
+            "ALTER TABLE discord_channels ADD COLUMN game VARCHAR",
+        ]:
+            try:
+                await conn.execute(text(stmt))
+            except Exception:
+                pass  # Column already exists

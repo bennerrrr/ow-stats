@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Dashboard — OW Stats{% endblock %}
+{% block title %}Dashboard — Game Stats{% endblock %}
 
 {% block content %}
 
@@ -7,12 +7,14 @@
 {% set error = request.query_params.get('error') %}
 {% if error %}
 <div class="mb-6 px-4 py-3 rounded-lg
-  {% if error == 'private' %}bg-yellow-900 border border-yellow-600 text-yellow-200
-  {% elif error == 'not_found' %}bg-red-900 border border-red-600 text-red-200
+  {% if error in ['private', 'hll_private'] %}bg-yellow-900 border border-yellow-600 text-yellow-200
+  {% elif error in ['not_found', 'hll_not_found'] %}bg-red-900 border border-red-600 text-red-200
   {% elif error == 'already_tracked' %}bg-blue-900 border border-blue-600 text-blue-200
   {% else %}bg-red-900 border border-red-600 text-red-200{% endif %}">
   {% if error == 'private' %}Profile is private — the player must set their Career Profile Visibility to Public in-game.
+  {% elif error == 'hll_private' %}Steam profile is private — the player must set their Steam profile and Game details to Public.
   {% elif error == 'not_found' %}Player not found — double-check the BattleTag (format: Name#1234).
+  {% elif error == 'hll_not_found' %}Steam ID not found — make sure you're using the 17-digit Steam64 ID.
   {% elif error == 'already_tracked' %}That player is already being tracked.
   {% else %}API error — try again in a moment.{% endif %}
 </div>
@@ -21,10 +23,16 @@
 <!-- Header + Add Player form -->
 <div class="flex flex-col sm:flex-row sm:items-center gap-4 mb-8">
   <h1 class="text-2xl font-bold text-white">Tracked Players</h1>
-  <form method="post" action="/players/add" class="flex gap-2 sm:ml-auto">
+  <form method="post" action="/players/add" class="flex gap-2 sm:ml-auto items-center flex-wrap">
+    <select name="game" id="game-select"
+      class="bg-ow-card border border-ow-border rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-ow-orange">
+      <option value="overwatch">Overwatch 2</option>
+      <option value="hell_let_loose">Hell Let Loose</option>
+    </select>
     <input
       type="text"
-      name="battletag"
+      name="player_id"
+      id="player-id-input"
       placeholder="BattleTag#1234"
       required
       class="bg-ow-card border border-ow-border rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-ow-orange w-48"
@@ -36,10 +44,21 @@
   </form>
 </div>
 
+<script>
+  document.getElementById('game-select').addEventListener('change', function() {
+    const input = document.getElementById('player-id-input');
+    if (this.value === 'hell_let_loose') {
+      input.placeholder = 'Steam64 ID (e.g. 76561198...)';
+    } else {
+      input.placeholder = 'BattleTag#1234';
+    }
+  });
+</script>
+
 {% if not players %}
 <div class="text-center py-20 text-gray-500">
   <p class="text-lg">No players tracked yet.</p>
-  <p class="text-sm mt-1">Add a BattleTag above to get started.</p>
+  <p class="text-sm mt-1">Add a BattleTag or Steam64 ID above to get started.</p>
 </div>
 {% else %}
 
@@ -48,6 +67,7 @@
   {% for item in players %}
   {% set player = item.player %}
   {% set snap = item.snapshot %}
+  {% set is_hll = player.game == 'hell_let_loose' %}
 
   <div class="bg-ow-card border border-ow-border rounded-xl p-5 flex flex-col gap-4 hover:border-ow-orange transition-colors">
 
@@ -61,17 +81,54 @@
         {{ (player.display_name or player.battletag)[0].upper() }}
       </div>
       {% endif %}
-      <div>
-        <a href="/players/{{ player.battletag | urltag }}" class="font-semibold text-white hover:text-ow-orange transition-colors">
-          {{ player.display_name or player.battletag.split('#')[0] }}
-        </a>
-        <p class="text-xs text-gray-500">{{ player.battletag }}</p>
+      <div class="min-w-0 flex-1">
+        <div class="flex items-center gap-2 flex-wrap">
+          <a href="/players/{{ player.battletag | urltag }}" class="font-semibold text-white hover:text-ow-orange transition-colors truncate">
+            {{ player.display_name or player.battletag.split('#')[0] }}
+          </a>
+          {% if is_hll %}
+          <span class="text-xs px-1.5 py-0.5 rounded bg-hll-indigo/20 text-indigo-300 border border-indigo-800 shrink-0">HLL</span>
+          {% else %}
+          <span class="text-xs px-1.5 py-0.5 rounded bg-ow-orange/20 text-yellow-300 border border-yellow-800 shrink-0">OW2</span>
+          {% endif %}
+        </div>
+        <p class="text-xs text-gray-500 truncate">{{ player.battletag }}</p>
       </div>
     </div>
 
     {% if snap %}
 
-    <!-- Ranks -->
+    {% if is_hll %}
+    {# ── HLL card content ── #}
+    {% set gd = snap.game_data or {} %}
+
+    <!-- HLL stats row -->
+    {% set pt = gd.get('playtime_forever') %}
+    <div class="grid grid-cols-3 gap-2 text-center">
+      <div>
+        <p class="text-hll-indigo font-bold text-lg">
+          {% if gd.get('kills') is not none %}{{ "{:,}".format(gd.kills) }}{% else %}—{% endif %}
+        </p>
+        <p class="text-xs text-gray-500">Kills</p>
+      </div>
+      <div>
+        <p class="text-hll-indigo font-bold text-lg">
+          {% if pt is not none %}{{ pt // 60 }}h{% else %}—{% endif %}
+        </p>
+        <p class="text-xs text-gray-500">Hours</p>
+      </div>
+      <div>
+        <p class="text-hll-indigo font-bold text-lg truncate text-sm">
+          {{ gd.get('top_role') or '—' }}
+        </p>
+        <p class="text-xs text-gray-500">Top Role</p>
+      </div>
+    </div>
+
+    {% else %}
+    {# ── OW card content ── #}
+
+    <!-- OW Ranks -->
     <div class="flex flex-wrap gap-2">
       {% for role, rank in [('Tank', snap.rank_tank), ('DPS', snap.rank_damage), ('Support', snap.rank_support), ('Open', snap.rank_open)] %}
       {% if rank %}
@@ -95,7 +152,7 @@
       {% endif %}
     </div>
 
-    <!-- Stats row -->
+    <!-- OW Stats row -->
     <div class="grid grid-cols-3 gap-2 text-center">
       <div>
         <p class="text-ow-orange font-bold text-lg">
@@ -129,6 +186,8 @@
     </div>
     {% endif %}
 
+    {% endif %}{# end OW/HLL branch #}
+
     <!-- Updated timestamp -->
     <p class="text-xs text-gray-600">Updated {{ snap.fetched_at | localdt("%b %d, %H:%M %Z") }}</p>
 
@@ -144,7 +203,7 @@
         <button type="submit" class="text-xs text-gray-500 hover:text-gray-300 transition-colors">Refresh</button>
       </form>
       <form method="post" action="/players/{{ player.battletag | urltag }}/delete"
-        onsubmit="return confirm('Remove {{ player.battletag }}?')">
+        onsubmit="return confirm('Remove {{ player.display_name or player.battletag }}?')">
         <button type="submit" class="text-xs text-red-600 hover:text-red-400 transition-colors">Remove</button>
       </form>
     </div>

@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}{{ player.display_name or player.battletag }} — OW Stats{% endblock %}
+{% block title %}{{ player.display_name or player.battletag }} — Game Stats{% endblock %}
 
 {% block content %}
 
@@ -9,14 +9,21 @@
 <div class="flex items-center gap-5 mb-8">
   {% if player.avatar_url %}
   <img src="{{ player.avatar_url }}" alt="{{ player.display_name }}"
-    class="w-20 h-20 rounded-full border-2 border-ow-orange object-cover" />
+    class="w-20 h-20 rounded-full border-2 {% if player.game == 'hell_let_loose' %}border-hll-indigo{% else %}border-ow-orange{% endif %} object-cover" />
   {% else %}
   <div class="w-20 h-20 rounded-full bg-ow-border flex items-center justify-center text-gray-400 font-bold text-3xl">
     {{ (player.display_name or player.battletag)[0].upper() }}
   </div>
   {% endif %}
   <div>
-    <h1 class="text-3xl font-bold text-white">{{ player.display_name or player.battletag.split('#')[0] }}</h1>
+    <div class="flex items-center gap-3 mb-1">
+      <h1 class="text-3xl font-bold text-white">{{ player.display_name or player.battletag.split('#')[0] }}</h1>
+      {% if player.game == 'hell_let_loose' %}
+      <span class="text-sm px-2 py-0.5 rounded bg-hll-indigo/20 text-indigo-300 border border-indigo-800">HLL</span>
+      {% else %}
+      <span class="text-sm px-2 py-0.5 rounded bg-ow-orange/20 text-yellow-300 border border-yellow-800">OW2</span>
+      {% endif %}
+    </div>
     <p class="text-gray-500">{{ player.battletag }}</p>
   </div>
   <button id="refresh-btn"
@@ -38,6 +45,7 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script>
   const REFRESH_URL = '/players/{{ player.battletag | urltag }}/refresh';
+  const PLAYER_GAME = '{{ player.game }}';
   let statsChart = null;
 
   // ── Chart ────────────────────────────────────────────────────────────────
@@ -56,6 +64,14 @@
 
     if (statsChart) { statsChart.destroy(); statsChart = null; }
 
+    if (PLAYER_GAME === 'hell_let_loose') {
+      initHLLChart(canvas, data);
+    } else {
+      initOWChart(canvas, data);
+    }
+  }
+
+  function initOWChart(canvas, data) {
     statsChart = new Chart(canvas, {
       type: 'line',
       data: {
@@ -87,56 +103,75 @@
           },
         ]
       },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        interaction: { mode: 'index', intersect: false },
-        plugins: {
-          legend: {
-            labels: { color: '#9CA3AF', usePointStyle: true, pointStyleWidth: 10 }
-          },
-          tooltip: {
-            backgroundColor: '#16213E',
-            borderColor: '#0F3460',
-            borderWidth: 1,
-            titleColor: '#E0E0E0',
-            bodyColor: '#9CA3AF',
-            padding: 10,
-            callbacks: {
-              label: ctx => ctx.datasetIndex === 0
-                ? ` Win Rate: ${ctx.parsed.y}%`
-                : ` KDA: ${ctx.parsed.y}`,
-            }
-          }
-        },
-        scales: {
-          x: {
-            ticks: { color: '#6B7280', maxRotation: 45, font: { size: 11 } },
-            grid: { color: 'rgba(15,52,96,0.6)' },
-          },
-          yWR: {
-            type: 'linear',
-            position: 'left',
-            ticks: { color: '#F99E1A', callback: v => v + '%' },
-            grid: { color: 'rgba(15,52,96,0.4)' },
-          },
-          yKDA: {
-            type: 'linear',
-            position: 'right',
-            ticks: { color: '#4A90D9' },
-            grid: { drawOnChartArea: false },
-          },
-        }
-      }
+      options: _chartOptions({
+        yWR: { position: 'left',  color: '#F99E1A', callback: v => v + '%' },
+        yKDA: { position: 'right', color: '#4A90D9', callback: null },
+      }, (ctx) => ctx.datasetIndex === 0 ? ` Win Rate: ${ctx.parsed.y}%` : ` KDA: ${ctx.parsed.y}`),
     });
   }
 
-  // ── Tab switching ─────────────────────────────────────────────────────────
+  function initHLLChart(canvas, data) {
+    statsChart = new Chart(canvas, {
+      type: 'line',
+      data: {
+        labels: data.map(d => d.date),
+        datasets: [
+          {
+            label: 'K/D Ratio',
+            data: data.map(d => d.kd),
+            borderColor: '#5C6BC0',
+            backgroundColor: 'rgba(92,107,192,0.1)',
+            fill: true,
+            tension: 0.3,
+            pointRadius: 4,
+            pointHoverRadius: 6,
+            spanGaps: true,
+          },
+        ]
+      },
+      options: _chartOptions({
+        y: { position: 'left', color: '#5C6BC0', callback: null },
+      }, (ctx) => ` K/D: ${ctx.parsed.y}`),
+    });
+  }
+
+  function _chartOptions(axes, tooltipLabel) {
+    const scales = { x: { ticks: { color: '#6B7280', maxRotation: 45, font: { size: 11 } }, grid: { color: 'rgba(15,52,96,0.6)' } } };
+    for (const [id, cfg] of Object.entries(axes)) {
+      scales[id] = {
+        type: 'linear',
+        position: cfg.position,
+        ticks: { color: cfg.color, ...(cfg.callback ? { callback: cfg.callback } : {}) },
+        grid: cfg.position === 'left' ? { color: 'rgba(15,52,96,0.4)' } : { drawOnChartArea: false },
+      };
+    }
+    return {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { labels: { color: '#9CA3AF', usePointStyle: true, pointStyleWidth: 10 } },
+        tooltip: {
+          backgroundColor: '#16213E',
+          borderColor: '#0F3460',
+          borderWidth: 1,
+          titleColor: '#E0E0E0',
+          bodyColor: '#9CA3AF',
+          padding: 10,
+          callbacks: { label: tooltipLabel }
+        }
+      },
+      scales,
+    };
+  }
+
+  // ── Tab switching (OW only) ───────────────────────────────────────────────
 
   function switchTab(key) {
     ['all', 'competitive', 'quickplay'].forEach(k => {
-      document.getElementById('panel-' + k).classList.toggle('hidden', k !== key);
+      document.getElementById('panel-' + k)?.classList.toggle('hidden', k !== key);
       const btn = document.getElementById('tab-' + k);
+      if (!btn) return;
       if (k === key) {
         btn.classList.add('border-ow-orange', 'text-ow-orange');
         btn.classList.remove('border-transparent', 'text-gray-400', 'hover:text-gray-200');
@@ -164,7 +199,6 @@
     const label     = document.getElementById('refresh-label');
     const liveStats = document.getElementById('live-stats');
 
-    // Remember expand state before swap (default is hidden)
     const historyWasVisible = !document.getElementById('history-table')?.classList.contains('hidden');
 
     btn.disabled = true;
@@ -180,7 +214,6 @@
       if (res.ok && liveStats) {
         liveStats.innerHTML = await res.text();
 
-        // Restore history expand state (template default is hidden)
         if (historyWasVisible) {
           document.getElementById('history-table')?.classList.remove('hidden');
           const toggle = document.getElementById('history-toggle');
@@ -198,7 +231,6 @@
     if (liveStats) liveStats.style.opacity = '1';
   });
 
-  // Init on page load
   initChart();
 </script>
 

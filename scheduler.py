@@ -8,24 +8,23 @@ from sqlalchemy import select
 
 from database import AsyncSessionLocal
 from models import Player, StatSnapshot
-from ow_client import fetch_player, ProfilePrivateError, PlayerNotFoundError, OverFastError
+from ow_client import fetch_player as ow_fetch_player, ProfilePrivateError, PlayerNotFoundError as OWPlayerNotFoundError, OverFastError
+from hll_client import fetch_player as hll_fetch_player, PlayerNotFoundError as HLLPlayerNotFoundError, HLLClientError
 
 logger = logging.getLogger(__name__)
 scheduler = AsyncIOScheduler()
 
 # battletag -> {baseline, latest, player_name, avatar_url}
-# Accumulates stats across polls while the player is still active.
-# Flushed (report sent) on the first poll that finds no new games.
 _pending_sessions: dict[str, dict] = {}
 
 
-async def snapshot_player(battletag: str) -> None:
+async def _snapshot_ow(battletag: str) -> None:
     try:
-        data = await fetch_player(battletag)
+        data = await ow_fetch_player(battletag)
     except ProfilePrivateError:
         logger.warning("Skipping %s — profile is private", battletag)
         return
-    except PlayerNotFoundError:
+    except OWPlayerNotFoundError:
         logger.warning("Skipping %s — player not found", battletag)
         return
     except OverFastError as e:
@@ -38,7 +37,6 @@ async def snapshot_player(battletag: str) -> None:
         if player is None:
             return
 
-        # Capture previous snapshot before writing the new one
         prev_result = await session.execute(
             select(StatSnapshot)
             .where(StatSnapshot.player_id == player.id)
@@ -86,7 +84,7 @@ async def snapshot_player(battletag: str) -> None:
         )
         session.add(snapshot)
         await session.commit()
-        logger.info("Snapshot saved for %s", battletag)
+        logger.info("OW snapshot saved for %s", battletag)
 
     # Session tracking: accumulate deltas across polls and fire the report
     # only once a full poll cycle passes with no new games. This handles the
@@ -121,18 +119,15 @@ async def snapshot_player(battletag: str) -> None:
             _pending_sessions[battletag]["avatar_url"] = data.avatar
     else:
         if battletag in _pending_sessions:
-            # Session ended — flush the accumulated report.
-            session = _pending_sessions.pop(battletag)
-            asyncio.create_task(_send_report(
-                player_name=session["player_name"],
+            sess = _pending_sessions.pop(battletag)
+            asyncio.create_task(_send_ow_report(
+                player_name=sess["player_name"],
                 battletag=battletag,
-                avatar_url=session["avatar_url"],
-                prev=session["baseline"],
-                new=session["latest"],
+                avatar_url=sess["avatar_url"],
+                prev=sess["baseline"],
+                new=sess["latest"],
             ))
-        elif _ranks_or_stats_changed(prev_dict, new_dict):
-            # No new games and no pending session, but something else changed
-            # (rank update, win-rate recalc, etc.) — notify immediately.
+        elif _ow_ranks_or_stats_changed(prev_dict, new_dict):
             asyncio.create_task(_send_stats_update(
                 player_name=data.username,
                 battletag=battletag,
@@ -142,7 +137,149 @@ async def snapshot_player(battletag: str) -> None:
             ))
 
 
-def _ranks_or_stats_changed(prev: dict, new: dict) -> bool:
+async def _snapshot_hll(steam_id: str) -> None:
+    api_key = os.getenv("STEAM_API_KEY", "")
+    if not api_key:
+        logger.warning("STEAM_API_KEY not set — skipping HLL player %s", steam_id)
+        return
+
+    from hll_client import ProfilePrivateError as HLLPrivateError
+    try:
+        data = await hll_fetch_player(steam_id, api_key)
+    except HLLPlayerNotFoundError:
+        logger.warning("Skipping HLL player %s — Steam ID not found", steam_id)
+        return
+    except HLLPrivateError:
+        logger.warning("Skipping HLL player %s — Steam profile is private", steam_id)
+        return
+    except HLLClientError as e:
+        logger.error("Steam API error for %s: %s", steam_id, e)
+        return
+    except Exception as e:
+        logger.error("Unexpected HLL client error for %s: %s", steam_id, e)
+        return
+
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(select(Player).where(Player.battletag == steam_id))
+        player = result.scalar_one_or_none()
+        if player is None:
+            return
+
+        prev_result = await session.execute(
+            select(StatSnapshot)
+            .where(StatSnapshot.player_id == player.id)
+            .order_by(StatSnapshot.fetched_at.desc())
+            .limit(1)
+        )
+        prev_snapshot = prev_result.scalar_one_or_none()
+        prev_playtime = (prev_snapshot.game_data or {}).get("playtime_forever") if prev_snapshot else None
+
+        player.display_name = data.display_name
+        player.avatar_url = data.avatar
+
+        game_data = {
+            "playtime_forever": data.playtime_forever,
+            "playtime_2weeks":  data.playtime_2weeks,
+            "kills":            data.kills,
+            "headshots":        data.headshots,
+            "tank_kills":       data.tank_kills,
+            "vehicle_kills":    data.vehicle_kills,
+            "artillery_kills":  data.artillery_kills,
+            "sector_caps":      data.sector_caps,
+            "ammo_drops":       data.ammo_drops,
+            "supply_drops":     data.supply_drops,
+            "commendations":    data.commendations,
+            "total_xp":         data.total_xp,
+            "top_role":         data.top_role,
+            "role_xp":          data.role_xp,
+        }
+
+        snapshot = StatSnapshot(
+            player_id=player.id,
+            fetched_at=datetime.now(timezone.utc),
+            game_data=game_data,
+        )
+        session.add(snapshot)
+        await session.commit()
+        logger.info("HLL snapshot saved for %s — %s kills, %s playtime min",
+                    steam_id, data.kills, data.playtime_forever)
+
+    new_playtime = data.playtime_forever
+    prev_gd = (prev_snapshot.game_data or {}) if prev_snapshot else {}
+
+    def _snap_stat(key):
+        return prev_gd.get(key)
+
+    if prev_playtime is not None and new_playtime is not None and new_playtime > prev_playtime:
+        if steam_id not in _pending_sessions:
+            _pending_sessions[steam_id] = {
+                "baseline": {
+                    "playtime":     prev_playtime,
+                    "kills":        _snap_stat("kills"),
+                    "headshots":    _snap_stat("headshots"),
+                    "sector_caps":  _snap_stat("sector_caps"),
+                    "total_xp":     _snap_stat("total_xp"),
+                },
+                "latest": {
+                    "playtime":     new_playtime,
+                    "kills":        data.kills,
+                    "headshots":    data.headshots,
+                    "sector_caps":  data.sector_caps,
+                    "total_xp":     data.total_xp,
+                },
+                "player_name": data.display_name,
+                "avatar_url":  data.avatar,
+                "top_role":    data.top_role,
+            }
+        else:
+            _pending_sessions[steam_id]["latest"] = {
+                "playtime":    new_playtime,
+                "kills":       data.kills,
+                "headshots":   data.headshots,
+                "sector_caps": data.sector_caps,
+                "total_xp":    data.total_xp,
+            }
+            _pending_sessions[steam_id]["player_name"] = data.display_name
+            _pending_sessions[steam_id]["avatar_url"]  = data.avatar
+            _pending_sessions[steam_id]["top_role"]    = data.top_role
+    else:
+        if steam_id in _pending_sessions:
+            sess = _pending_sessions.pop(steam_id)
+            b, l = sess["baseline"], sess["latest"]
+
+            def _delta(key):
+                return (l[key] - b[key]) if (l.get(key) is not None and b.get(key) is not None) else None
+
+            asyncio.create_task(_send_hll_session_report(
+                player_name=sess["player_name"],
+                steam_id=steam_id,
+                avatar_url=sess["avatar_url"],
+                duration_minutes=l["playtime"] - b["playtime"],
+                kills_delta=_delta("kills"),
+                headshots_delta=_delta("headshots"),
+                sector_caps_delta=_delta("sector_caps"),
+                xp_delta=_delta("total_xp"),
+                top_role=sess.get("top_role"),
+            ))
+
+
+async def snapshot_player(battletag: str) -> None:
+    """Dispatch to the correct game's snapshot function based on the DB record."""
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(select(Player.game).where(Player.battletag == battletag))
+        row = result.one_or_none()
+
+    if row is None:
+        return
+
+    game = row[0]
+    if game == "hell_let_loose":
+        await _snapshot_hll(battletag)
+    else:
+        await _snapshot_ow(battletag)
+
+
+def _ow_ranks_or_stats_changed(prev: dict, new: dict) -> bool:
     return (
         prev.get("rank_tank") != new.get("rank_tank")
         or prev.get("rank_damage") != new.get("rank_damage")
@@ -154,32 +291,33 @@ def _ranks_or_stats_changed(prev: dict, new: dict) -> bool:
     )
 
 
-async def _send_report(
-    player_name: str,
-    battletag: str,
-    avatar_url: str | None,
-    prev: dict,
-    new: dict,
-) -> None:
+async def _send_ow_report(player_name, battletag, avatar_url, prev, new):
     try:
         from discord_bot import send_game_report
         await send_game_report(player_name, battletag, avatar_url, prev, new)
     except Exception as e:
-        logger.error("Error sending game report for %s: %s", battletag, e)
+        logger.error("Error sending OW game report for %s: %s", battletag, e)
 
 
-async def _send_stats_update(
-    player_name: str,
-    battletag: str,
-    avatar_url: str | None,
-    prev: dict,
-    new: dict,
-) -> None:
+async def _send_stats_update(player_name, battletag, avatar_url, prev, new):
     try:
         from discord_bot import send_stats_update
         await send_stats_update(player_name, battletag, avatar_url, prev, new)
     except Exception as e:
         logger.error("Error sending stats update for %s: %s", battletag, e)
+
+
+async def _send_hll_session_report(player_name, steam_id, avatar_url, duration_minutes,
+                                   kills_delta=None, headshots_delta=None,
+                                   sector_caps_delta=None, xp_delta=None, top_role=None):
+    try:
+        from discord_bot import send_hll_session_report
+        await send_hll_session_report(
+            player_name, steam_id, avatar_url, duration_minutes,
+            kills_delta, headshots_delta, sector_caps_delta, xp_delta, top_role,
+        )
+    except Exception as e:
+        logger.error("Error sending HLL session report for %s: %s", steam_id, e)
 
 
 async def poll_all_players() -> None:
@@ -189,7 +327,7 @@ async def poll_all_players() -> None:
 
     for battletag in battletags:
         await snapshot_player(battletag)
-        await asyncio.sleep(1)  # 1s delay between requests to respect rate limits
+        await asyncio.sleep(1)
 
 
 def start_scheduler() -> None:

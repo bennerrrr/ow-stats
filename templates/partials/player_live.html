@@ -1,7 +1,213 @@
-{# Snapshot data for Chart.js — read by main template JS, not executed #}
+{# Snapshot data for Chart.js — read by main template JS #}
 <script type="application/json" id="snapshot-data">{{ snapshots_json | safe }}</script>
 
 {% set latest = snapshots[0] %}
+
+{% if player.game == 'hell_let_loose' %}
+
+{# ═══════════════════════════════════════════════════════════════════════════
+   HLL player live stats
+   ═══════════════════════════════════════════════════════════════════════════ #}
+
+{% set gd = latest.game_data or {} %}
+
+<!-- HLL: Career stats tiles -->
+{% set pt = gd.get('playtime_forever') %}
+{% set pt2w = gd.get('playtime_2weeks') %}
+{% set kills = gd.get('kills') %}
+{% set headshots = gd.get('headshots') %}
+<section class="mb-8">
+  <h2 class="text-lg font-semibold text-white mb-3">Career Stats</h2>
+  <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-4">
+    <div class="bg-ow-card border border-ow-border rounded-lg p-4 text-center">
+      <p class="text-2xl font-bold text-hll-indigo">
+        {% if kills is not none %}{{ "{:,}".format(kills) }}{% else %}—{% endif %}
+      </p>
+      <p class="text-xs text-gray-500 mt-1">Total Kills</p>
+    </div>
+    <div class="bg-ow-card border border-ow-border rounded-lg p-4 text-center">
+      <p class="text-2xl font-bold text-hll-indigo">
+        {% if headshots is not none and kills %}{{ "%.1f"|format(headshots / kills * 100) }}%{% else %}—{% endif %}
+      </p>
+      <p class="text-xs text-gray-500 mt-1">Headshot %</p>
+    </div>
+    <div class="bg-ow-card border border-ow-border rounded-lg p-4 text-center">
+      <p class="text-2xl font-bold text-hll-indigo">
+        {% if pt is not none %}{{ pt // 60 }}h{% else %}—{% endif %}
+      </p>
+      <p class="text-xs text-gray-500 mt-1">Total Playtime</p>
+    </div>
+    <div class="bg-ow-card border border-ow-border rounded-lg p-4 text-center">
+      <p class="text-2xl font-bold text-hll-indigo">
+        {% if pt2w is not none %}{{ pt2w // 60 }}h {{ pt2w % 60 }}m{% else %}—{% endif %}
+      </p>
+      <p class="text-xs text-gray-500 mt-1">Last 2 Weeks</p>
+    </div>
+  </div>
+
+  <!-- Secondary stats row -->
+  <div class="flex flex-wrap gap-3">
+    {% for label, key in [('Vehicles', none), ('Sector Caps', 'sector_caps'), ('Ammo Drops', 'ammo_drops'), ('Supply Drops', 'supply_drops'), ('Commendations', 'commendations')] %}
+    {% if key == none %}
+      {% set val = (gd.get('tank_kills') or 0) + (gd.get('vehicle_kills') or 0) %}
+      {% if val > 0 %}
+      <div class="bg-ow-card border border-ow-border rounded-lg px-4 py-2 text-center min-w-[100px]">
+        <p class="text-lg font-semibold text-gray-200">{{ "{:,}".format(val) }}</p>
+        <p class="text-xs text-gray-500">{{ label }}</p>
+      </div>
+      {% endif %}
+    {% elif gd.get(key) %}
+    <div class="bg-ow-card border border-ow-border rounded-lg px-4 py-2 text-center min-w-[100px]">
+      <p class="text-lg font-semibold text-gray-200">{{ "{:,}".format(gd[key]) }}</p>
+      <p class="text-xs text-gray-500">{{ label }}</p>
+    </div>
+    {% endif %}
+    {% endfor %}
+  </div>
+</section>
+
+<!-- HLL: Role breakdown -->
+{% set role_xp = gd.get('role_xp') or {} %}
+{% if role_xp %}
+<section class="mb-8">
+  <h2 class="text-lg font-semibold text-white mb-3">Role Breakdown
+    {% if gd.get('top_role') %}<span class="text-sm font-normal text-gray-500 ml-1">· Top: {{ gd.top_role }}</span>{% endif %}
+  </h2>
+  <div class="bg-ow-card border border-ow-border rounded-xl overflow-hidden">
+    <table class="w-full text-sm">
+      <thead class="bg-ow-border text-gray-400 text-xs uppercase">
+        <tr>
+          <th class="px-4 py-3 text-left">Role</th>
+          <th class="px-4 py-3 text-right">XP</th>
+          <th class="px-4 py-3 text-right">Share</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-ow-border">
+        {% set sorted_roles = (role_xp | dictsort(by='value', reverse=true))[:8] %}
+        {% set total_role_xp = role_xp.values() | sum %}
+        {% for role_name, xp in sorted_roles %}
+        <tr class="hover:bg-ow-border transition-colors {% if loop.first %}bg-ow-border/40{% endif %}">
+          <td class="px-4 py-3 font-medium text-white">
+            {% if loop.first %}⭐ {% endif %}{{ role_name }}
+          </td>
+          <td class="px-4 py-3 text-right text-gray-400">{{ "{:,}".format(xp) }}</td>
+          <td class="px-4 py-3 text-right">
+            {% set pct = (xp / total_role_xp * 100) if total_role_xp > 0 else 0 %}
+            <div class="flex items-center justify-end gap-2">
+              <div class="w-16 bg-ow-border rounded-full h-1.5">
+                <div class="bg-hll-indigo h-1.5 rounded-full" style="width: {{ pct | int }}%"></div>
+              </div>
+              <span class="text-gray-400 text-xs w-8 text-right">{{ "%.0f"|format(pct) }}%</span>
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endif %}
+
+<!-- HLL: K/D over time chart -->
+<section class="mb-8">
+  <h2 class="text-lg font-semibold text-white mb-3">K/D Ratio Over Time</h2>
+  <div class="bg-ow-card border border-ow-border rounded-xl p-4">
+    {% if snapshots | length >= 2 %}
+    <div style="position: relative; height: 240px;">
+      <canvas id="stats-chart"></canvas>
+    </div>
+    {% else %}
+    <p class="text-sm text-gray-500 italic text-center py-10">Chart will appear after a few more snapshots.</p>
+    {% endif %}
+  </div>
+</section>
+
+<!-- HLL: Session history -->
+{% if sessions %}
+<section class="mb-8">
+  <h2 class="text-lg font-semibold text-white mb-3">Session History
+    <span class="text-sm font-normal text-gray-500 ml-1">({{ sessions | length }})</span>
+  </h2>
+  <div class="bg-ow-card border border-ow-border rounded-xl overflow-x-auto">
+    <table class="w-full text-sm">
+      <thead class="bg-ow-border text-gray-400 text-xs uppercase">
+        <tr>
+          <th class="px-4 py-3 text-left">Date</th>
+          <th class="px-4 py-3 text-right">Time Played</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-ow-border">
+        {% for sess in sessions %}
+        <tr class="hover:bg-ow-border/60 transition-colors {% if loop.first %}bg-ow-border/40{% endif %}">
+          <td class="px-4 py-3 text-gray-400 whitespace-nowrap">
+            {{ sess.start }}
+            {% if loop.first %}<span class="ml-1 text-hll-indigo text-xs">latest</span>{% endif %}
+          </td>
+          <td class="px-4 py-3 text-right text-gray-300">{{ sess.duration }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endif %}
+
+<!-- HLL: Snapshot history (collapsible) -->
+<section>
+  <div class="flex items-center justify-between mb-3">
+    <h2 class="text-lg font-semibold text-white">
+      Snapshot History
+      <span class="text-sm font-normal text-gray-500 ml-1">({{ snapshots | length }})</span>
+    </h2>
+    <button id="history-toggle" onclick="toggleHistory()"
+      class="text-xs text-ow-blue hover:text-blue-300 transition-colors px-2 py-1 rounded border border-ow-border">
+      ▼ Show
+    </button>
+  </div>
+  <div id="history-table" class="hidden">
+    <div class="bg-ow-card border border-ow-border rounded-xl overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead class="bg-ow-border text-gray-400 text-xs uppercase">
+          <tr>
+            <th class="px-4 py-3 text-left">Fetched</th>
+            <th class="px-4 py-3 text-right">Kills</th>
+            <th class="px-4 py-3 text-right">HS%</th>
+            <th class="px-4 py-3 text-right">Playtime</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-ow-border">
+          {% for snap in snapshots %}
+          {% set sgd = snap.game_data or {} %}
+          {% set sk = sgd.get('kills') %}
+          {% set sh = sgd.get('headshots') %}
+          {% set spt = sgd.get('playtime_forever') %}
+          <tr class="hover:bg-ow-border/60 transition-colors {% if loop.first %}bg-ow-border/40{% endif %}">
+            <td class="px-4 py-3 text-gray-400 whitespace-nowrap">
+              {{ snap.fetched_at | localdt }}
+              {% if loop.first %}<span class="ml-1 text-hll-indigo text-xs">latest</span>{% endif %}
+            </td>
+            <td class="px-4 py-3 text-right text-gray-300">
+              {% if sk is not none %}{{ "{:,}".format(sk) }}{% else %}—{% endif %}
+            </td>
+            <td class="px-4 py-3 text-right text-gray-400">
+              {% if sh is not none and sk %}{{ "%.1f"|format(sh / sk * 100) }}%{% else %}—{% endif %}
+            </td>
+            <td class="px-4 py-3 text-right text-gray-300">
+              {% if spt is not none %}{{ spt // 60 }}h {{ spt % 60 }}m{% else %}—{% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+{% else %}
+
+{# ═══════════════════════════════════════════════════════════════════════════
+   OW player live stats (unchanged)
+   ═══════════════════════════════════════════════════════════════════════════ #}
 
 <!-- Current ranks -->
 <section class="mb-8">
@@ -70,7 +276,6 @@
   <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
     {% for r in role_stats %}
     <div class="bg-ow-card border border-ow-border rounded-xl p-4">
-
       <div class="flex items-center justify-between mb-3">
         <span class="text-sm font-bold uppercase tracking-wide
           {% if r.role_key == 'tank' %}text-blue-400
@@ -80,7 +285,6 @@
         </span>
         <span class="text-xs text-gray-500">{{ (r.time_played // 3600) }}h {{ ((r.time_played % 3600) // 60) }}m</span>
       </div>
-
       <div class="space-y-2 text-sm">
         {% if r.kda is not none %}
         <div class="flex justify-between items-center">
@@ -116,7 +320,6 @@
         </div>
         {% endif %}
       </div>
-
     </div>
     {% endfor %}
   </div>
@@ -137,7 +340,7 @@
   </div>
 </section>
 
-<!-- Session history -->
+<!-- OW Session history -->
 {% if sessions %}
 <section class="mb-8">
   <h2 class="text-lg font-semibold text-white mb-3">Session History
@@ -185,7 +388,7 @@
 </section>
 {% endif %}
 
-<!-- Snapshot history (collapsible) -->
+<!-- OW Snapshot history (collapsible) -->
 <section>
   <div class="flex items-center justify-between mb-3">
     <h2 class="text-lg font-semibold text-white">
@@ -242,3 +445,5 @@
     </div>
   </div>
 </section>
+
+{% endif %}{# end OW/HLL branch #}

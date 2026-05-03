@@ -1,7 +1,7 @@
 import asyncio
 import json
 import os
-from datetime import timezone
+from datetime import datetime, timezone
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from fastapi import APIRouter, Depends, Request, Form, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from database import get_db
 from models import Player, StatSnapshot
-from ow_client import fetch_player, ProfilePrivateError, PlayerNotFoundError, OverFastError, HERO_ROLES
+from ow_client import fetch_player as ow_fetch_player, ProfilePrivateError, PlayerNotFoundError as OWPlayerNotFoundError, OverFastError, HERO_ROLES
 from scheduler import snapshot_player
 
 router = APIRouter()
@@ -39,10 +39,10 @@ _ROLE_COLORS = {"tank": "blue", "damage": "red", "support": "green"}
 
 
 def _snapshots_to_json(snapshots) -> str:
-    """Emit one point per snapshot where tracked stats actually changed, oldest-first."""
+    """OW: one chart point per snapshot where tracked stats changed, oldest-first."""
     result = []
     prev = None
-    for s in reversed(snapshots):  # snapshots arrive newest-first; iterate oldest-first
+    for s in reversed(snapshots):
         wr = round(s.win_rate * 100, 1) if s.win_rate is not None else None
         kda = round(s.kda, 2) if s.kda is not None else None
         gp = s.games_played
@@ -57,9 +57,25 @@ def _snapshots_to_json(snapshots) -> str:
     return json.dumps(result)
 
 
+def _hll_snapshots_to_json(snapshots) -> str:
+    """HLL: one chart point per snapshot where K/D changed, oldest-first."""
+    result = []
+    prev_kd = None
+    for s in reversed(snapshots):
+        gd = s.game_data or {}
+        kd = round(gd["k_d_ratio"], 2) if gd.get("k_d_ratio") is not None else None
+        if kd != prev_kd:
+            result.append({
+                "date": _to_display_tz(s.fetched_at).strftime("%b %d %H:%M %Z"),
+                "kd": kd,
+            })
+            prev_kd = kd
+    return json.dumps(result)
+
+
 def _compute_sessions(snapshots) -> list[dict]:
-    """Return per-session deltas between consecutive snapshots where games_played increased."""
-    ordered = list(reversed(snapshots))  # oldest → newest
+    """OW: per-session deltas between consecutive snapshots where games_played increased."""
+    ordered = list(reversed(snapshots))
     sessions = []
     for i in range(1, len(ordered)):
         prev, curr = ordered[i - 1], ordered[i]
@@ -82,11 +98,47 @@ def _compute_sessions(snapshots) -> list[dict]:
             "win_rate": session_wr,
             "kda_delta": kda_delta,
         })
+    return list(reversed(sessions))
+
+
+def _compute_hll_sessions(snapshots) -> list[dict]:
+    """HLL: derive play sessions from playtime_forever deltas between consecutive snapshots."""
+    ordered = list(reversed(snapshots))  # oldest → newest
+    sessions = []
+    for i in range(1, len(ordered)):
+        prev, curr = ordered[i - 1], ordered[i]
+        prev_pt = (prev.game_data or {}).get("playtime_forever")
+        curr_pt = (curr.game_data or {}).get("playtime_forever")
+        if prev_pt is None or curr_pt is None:
+            continue
+        delta_minutes = curr_pt - prev_pt
+        if delta_minutes <= 0:
+            continue
+        sessions.append({
+            "start": _to_display_tz(prev.fetched_at).strftime("%b %d %H:%M %Z"),
+            "duration": _fmt_duration(delta_minutes * 60),
+            "duration_seconds": delta_minutes * 60,
+        })
     return list(reversed(sessions))  # most recent first
 
 
+def _parse_iso(s: str | None) -> datetime | None:
+    if not s:
+        return None
+    try:
+        return datetime.fromisoformat(s.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+def _fmt_duration(seconds: int) -> str:
+    h, rem = divmod(seconds, 3600)
+    m = rem // 60
+    return f"{h}h {m}m" if h else f"{m}m"
+
+
 def _compute_role_stats(top_heroes: list | None) -> list[dict]:
-    """Aggregate hero stats by role, weighted by time played."""
+    """OW: aggregate hero stats by role, weighted by time played."""
     if not top_heroes:
         return []
     acc: dict[str, dict] = {}
@@ -139,10 +191,9 @@ def _compute_role_stats(top_heroes: list | None) -> list[dict]:
 
 @router.get("/", response_class=HTMLResponse)
 async def index(request: Request, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(Player).order_by(Player.added_at))
+    result = await db.execute(select(Player).order_by(Player.game, Player.added_at))
     players = result.scalars().all()
 
-    # Load latest snapshot for each player
     player_data = []
     for player in players:
         snap_result = await db.execute(
@@ -172,54 +223,83 @@ async def player_detail(request: Request, battletag: str, db: AsyncSession = Dep
     )
     snapshots = snaps_result.scalars().all()
 
-    role_stats = _compute_role_stats(snapshots[0].top_heroes if snapshots else None)
-    return templates.TemplateResponse(
-        "player.html", {
-            "request": request,
+    ctx = _build_player_context(player, snapshots)
+    return templates.TemplateResponse("player.html", {"request": request, **ctx})
+
+
+def _build_player_context(player: Player, snapshots) -> dict:
+    if player.game == "hell_let_loose":
+        return {
             "player": player,
             "snapshots": snapshots,
-            "snapshots_json": _snapshots_to_json(snapshots),
-            "role_stats": role_stats,
-            "sessions": _compute_sessions(snapshots),
+            "snapshots_json": _hll_snapshots_to_json(snapshots),
+            "sessions": _compute_hll_sessions(snapshots),
+            "role_stats": [],
         }
-    )
+    return {
+        "player": player,
+        "snapshots": snapshots,
+        "snapshots_json": _snapshots_to_json(snapshots),
+        "role_stats": _compute_role_stats(snapshots[0].top_heroes if snapshots else None),
+        "sessions": _compute_sessions(snapshots),
+    }
 
 
 @router.post("/players/add")
 async def add_player(
     request: Request,
-    battletag: str = Form(...),
+    player_id: str = Form(...),
+    game: str = Form(default="overwatch"),
     db: AsyncSession = Depends(get_db),
 ):
-    battletag = battletag.strip()
+    player_id = player_id.strip()
+    game = game.strip()
 
-    # Check for duplicate
-    existing = await db.execute(select(Player).where(Player.battletag == battletag))
+    existing = await db.execute(select(Player).where(Player.battletag == player_id))
     if existing.scalar_one_or_none():
         return RedirectResponse("/?error=already_tracked", status_code=303)
 
-    # Validate the player exists and profile is accessible
+    if game == "hell_let_loose":
+        return await _add_hll_player_web(player_id, db)
+    else:
+        return await _add_ow_player_web(player_id, db)
+
+
+async def _add_ow_player_web(battletag: str, db: AsyncSession):
     try:
-        data = await fetch_player(battletag)
-    except PlayerNotFoundError:
+        data = await ow_fetch_player(battletag)
+    except OWPlayerNotFoundError:
         return RedirectResponse("/?error=not_found", status_code=303)
     except ProfilePrivateError:
         return RedirectResponse("/?error=private", status_code=303)
     except OverFastError:
         return RedirectResponse("/?error=api_error", status_code=303)
 
-    player = Player(
-        battletag=battletag,
-        display_name=data.username,
-        avatar_url=data.avatar,
-    )
+    player = Player(battletag=battletag, game="overwatch", display_name=data.username, avatar_url=data.avatar)
     db.add(player)
     await db.commit()
     await db.refresh(player)
-
-    # Take an initial snapshot immediately
     await snapshot_player(battletag)
+    return RedirectResponse("/", status_code=303)
 
+
+async def _add_hll_player_web(steam_id: str, db: AsyncSession):
+    from hll_client import fetch_player as hll_fetch, PlayerNotFoundError, ProfilePrivateError, HLLClientError
+    api_key = os.getenv("STEAM_API_KEY", "")
+    try:
+        data = await hll_fetch(steam_id, api_key)
+    except PlayerNotFoundError:
+        return RedirectResponse("/?error=hll_not_found", status_code=303)
+    except ProfilePrivateError:
+        return RedirectResponse("/?error=hll_private", status_code=303)
+    except (HLLClientError, Exception):
+        return RedirectResponse("/?error=api_error", status_code=303)
+
+    player = Player(battletag=steam_id, game="hell_let_loose", display_name=data.display_name, avatar_url=data.avatar)
+    db.add(player)
+    await db.commit()
+    await db.refresh(player)
+    await snapshot_player(steam_id)
     return RedirectResponse("/", status_code=303)
 
 
@@ -235,15 +315,21 @@ async def delete_player(battletag: str, db: AsyncSession = Depends(get_db)):
 
 @router.post("/players/{battletag:path}/refresh")
 async def refresh_player(battletag: str, request: Request, db: AsyncSession = Depends(get_db)):
-    from ow_client import invalidate_cache
-    invalidate_cache(battletag)
+    result = await db.execute(select(Player).where(Player.battletag == battletag))
+    player = result.scalar_one_or_none()
+    if player is None:
+        raise HTTPException(status_code=404)
+
+    if player.game == "overwatch":
+        from ow_client import invalidate_cache
+        invalidate_cache(battletag)
+    else:
+        from hll_client import invalidate_cache as hll_invalidate
+        hll_invalidate(battletag)
+
     await snapshot_player(battletag)
 
     if request.headers.get("X-Requested-With") == "XMLHttpRequest":
-        result = await db.execute(select(Player).where(Player.battletag == battletag))
-        player = result.scalar_one_or_none()
-        if player is None:
-            raise HTTPException(status_code=404)
         snaps_result = await db.execute(
             select(StatSnapshot)
             .where(StatSnapshot.player_id == player.id)
@@ -251,16 +337,9 @@ async def refresh_player(battletag: str, request: Request, db: AsyncSession = De
             .limit(100)
         )
         snapshots = snaps_result.scalars().all()
-        role_stats = _compute_role_stats(snapshots[0].top_heroes if snapshots else None)
+        ctx = _build_player_context(player, snapshots)
         return templates.TemplateResponse(
-            "partials/player_live.html", {
-                "request": request,
-                "player": player,
-                "snapshots": snapshots,
-                "snapshots_json": _snapshots_to_json(snapshots),
-                "role_stats": role_stats,
-                "sessions": _compute_sessions(snapshots),
-            }
+            "partials/player_live.html", {"request": request, **ctx}
         )
 
     return RedirectResponse(f"/players/{battletag.replace('#', '%23')}", status_code=303)

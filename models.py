@@ -12,6 +12,8 @@ class DiscordChannel(Base):
     guild_id: Mapped[str] = mapped_column(String, nullable=False)
     channel_id: Mapped[str] = mapped_column(String, unique=True, nullable=False)
     channel_name: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    # NULL = receives all games; "overwatch" / "hell_let_loose" = game-specific
+    game: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     added_at: Mapped[datetime] = mapped_column(
         DateTime, default=lambda: datetime.now(timezone.utc)
     )
@@ -22,6 +24,7 @@ class Player(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     battletag: Mapped[str] = mapped_column(String, unique=True, nullable=False)
+    game: Mapped[str] = mapped_column(String, nullable=False, default="overwatch", server_default="overwatch")
     display_name: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     avatar_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     added_at: Mapped[datetime] = mapped_column(
@@ -65,5 +68,8 @@ class StatSnapshot(Base):
     # Full raw API responses for forward-compatibility
     raw_summary: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
     raw_stats: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+
+    # Game-specific data (used by HLL: bm_player_id, sessions, kills, deaths, k_d_ratio, etc.)
+    game_data: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
 
     player: Mapped["Player"] = relationship("Player", back_populates="snapshots")

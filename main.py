@@ -20,17 +20,29 @@ logger = logging.getLogger(__name__)
 
 
 async def seed_players() -> None:
+    """
+    Seed players from TRACKED_PLAYERS env var.
+    Format: comma-separated identifiers, optionally suffixed with :hll for HLL players.
+    Example: "Ben#1234,76561198012345678:hll,Alice#5678"
+    """
     raw = os.getenv("TRACKED_PLAYERS", "")
-    battletags = [b.strip() for b in raw.split(",") if b.strip()]
-    if not battletags:
+    entries = [e.strip() for e in raw.split(",") if e.strip()]
+    if not entries:
         return
 
     async with AsyncSessionLocal() as session:
-        for battletag in battletags:
-            existing = await session.execute(select(Player).where(Player.battletag == battletag))
+        for entry in entries:
+            if entry.endswith(":hll"):
+                player_id = entry[:-4]
+                game = "hell_let_loose"
+            else:
+                player_id = entry
+                game = "overwatch"
+
+            existing = await session.execute(select(Player).where(Player.battletag == player_id))
             if existing.scalar_one_or_none() is None:
-                session.add(Player(battletag=battletag))
-                logger.info("Seeded player: %s", battletag)
+                session.add(Player(battletag=player_id, game=game))
+                logger.info("Seeded player: %s (%s)", player_id, game)
         await session.commit()
 
 
