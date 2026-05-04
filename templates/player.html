@@ -47,6 +47,7 @@
   const REFRESH_URL = '/players/{{ player.battletag | urltag }}/refresh';
   const PLAYER_GAME = '{{ player.game }}';
   let statsChart = null;
+  let allSnapshotData = [];
 
   // ── Chart ────────────────────────────────────────────────────────────────
 
@@ -55,20 +56,47 @@
     return el ? JSON.parse(el.textContent) : [];
   }
 
-  function initChart() {
+  function filterDataByDays(data, days) {
+    if (!days) return data;
+    const cutoff = Date.now() - days * 86400000;
+    return data.filter(d => new Date(d.ts).getTime() >= cutoff);
+  }
+
+  function setActiveFilter(days) {
+    const key = days == null ? '' : String(days);
+    document.querySelectorAll('[data-days]').forEach(btn => {
+      const active = btn.dataset.days === key;
+      const isHLL = PLAYER_GAME === 'hell_let_loose';
+      const accentBorder = isHLL ? 'border-hll-indigo' : 'border-ow-orange';
+      const accentText   = isHLL ? 'text-hll-indigo'   : 'text-ow-orange';
+      btn.classList.toggle(accentBorder, active);
+      btn.classList.toggle(accentText, active);
+      btn.classList.toggle('border-transparent', !active);
+      btn.classList.toggle('text-gray-500', !active);
+    });
+  }
+
+  function filterChart(days) {
     const canvas = document.getElementById('stats-chart');
     if (!canvas) return;
-
-    const data = getSnapshotData();
+    const data = filterDataByDays(allSnapshotData, days);
     if (data.length < 2) return;
-
     if (statsChart) { statsChart.destroy(); statsChart = null; }
-
     if (PLAYER_GAME === 'hell_let_loose') {
       initHLLChart(canvas, data);
     } else {
       initOWChart(canvas, data);
     }
+    setActiveFilter(days);
+  }
+
+  function initChart() {
+    allSnapshotData = getSnapshotData();
+    if (allSnapshotData.length < 2) return;
+    // Default to 30d if we have more than 30 days of data, otherwise show all
+    const oldest = new Date(allSnapshotData[0].ts);
+    const spanDays = (Date.now() - oldest.getTime()) / 86400000;
+    filterChart(spanDays > 30 ? 30 : null);
   }
 
   function initOWChart(canvas, data) {

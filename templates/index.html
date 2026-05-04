@@ -134,6 +134,27 @@
         </div>
       </div>
 
+      <!-- Trend row -->
+      {% set t = item.trend %}
+      {% if t and (t.games_delta or t.wr_delta is not none or t.kda_delta is not none) %}
+      <div class="flex items-center gap-3 text-xs border-t border-ow-border pt-2">
+        <span class="text-gray-600">{{ t.period }}d trend</span>
+        {% if t.games_delta is not none and t.games_delta > 0 %}
+        <span class="text-gray-400">+{{ t.games_delta }} games</span>
+        {% endif %}
+        {% if t.wr_delta is not none and t.wr_delta != 0 %}
+        <span class="{% if t.wr_delta > 0 %}text-green-400{% else %}text-red-400{% endif %}">
+          WR {% if t.wr_delta > 0 %}+{% endif %}{{ t.wr_delta }}%
+        </span>
+        {% endif %}
+        {% if t.kda_delta is not none and t.kda_delta != 0 %}
+        <span class="ml-auto {% if t.kda_delta > 0 %}text-green-400{% else %}text-red-400{% endif %}">
+          KDA {% if t.kda_delta > 0 %}+{% endif %}{{ t.kda_delta }}
+        </span>
+        {% endif %}
+      </div>
+      {% endif %}
+
       <!-- Top hero -->
       {% if snap.top_heroes %}
       {% set hero = snap.top_heroes[0] %}
@@ -250,6 +271,20 @@
         <span class="text-gray-400 ml-auto">Role: <span class="text-gray-200 font-medium">{{ gd.top_role }}</span></span>
         {% endif %}
       </div>
+
+      <!-- Trend row -->
+      {% set t = item.trend %}
+      {% if t and (t.kills_delta is not none or t.pt_delta is not none) %}
+      <div class="flex items-center gap-3 text-xs border-t border-ow-border pt-2">
+        <span class="text-gray-600">{{ t.period }}d trend</span>
+        {% if t.kills_delta is not none and t.kills_delta > 0 %}
+        <span class="text-gray-400">+{{ "{:,}".format(t.kills_delta) }} kills</span>
+        {% endif %}
+        {% if t.pt_delta is not none and t.pt_delta > 0 %}
+        <span class="text-hll-indigo ml-auto">+{{ t.pt_delta // 60 }}h {{ t.pt_delta % 60 }}m</span>
+        {% endif %}
+      </div>
+      {% endif %}
 
       {% else %}
       <p class="text-sm text-gray-600 italic">Awaiting first poll…</p>

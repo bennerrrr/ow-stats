@@ -1,7 +1,7 @@
 import asyncio
 import json
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from fastapi import APIRouter, Depends, Request, Form, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -47,7 +47,9 @@ def _snapshots_to_json(snapshots) -> str:
         kda = round(s.kda, 2) if s.kda is not None else None
         gp = s.games_played
         if prev is None or (wr, kda, gp) != prev:
+            ts = s.fetched_at if s.fetched_at.tzinfo else s.fetched_at.replace(tzinfo=timezone.utc)
             result.append({
+                "ts": ts.isoformat(),
                 "date": _to_display_tz(s.fetched_at).strftime("%b %d %H:%M %Z"),
                 "win_rate": wr,
                 "kda": kda,
@@ -66,7 +68,9 @@ def _hll_snapshots_to_json(snapshots) -> str:
         kills = gd.get("kills")
         xp = gd.get("total_xp")
         if (kills, xp) != prev:
+            ts = s.fetched_at if s.fetched_at.tzinfo else s.fetched_at.replace(tzinfo=timezone.utc)
             result.append({
+                "ts": ts.isoformat(),
                 "date": _to_display_tz(s.fetched_at).strftime("%b %d %H:%M %Z"),
                 "kills": kills,
                 "xp": xp,
@@ -200,6 +204,56 @@ def _compute_role_stats(top_heroes: list | None) -> list[dict]:
     return result
 
 
+def _tz(dt: datetime) -> datetime:
+    return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+
+
+def _trend_baseline(snaps, days: int = 7):
+    """Return (baseline_snap, period_days) from a desc-ordered snap list."""
+    if len(snaps) < 2:
+        return None, 0
+    latest_time = _tz(snaps[0].fetched_at)
+    cutoff = latest_time - timedelta(days=days)
+    baseline = None
+    for s in snaps[1:]:
+        if _tz(s.fetched_at) <= cutoff:
+            baseline = s
+            break
+    if baseline is None:
+        baseline = snaps[-1]
+    period = round((latest_time - _tz(baseline.fetched_at)).total_seconds() / 86400)
+    return baseline, period
+
+
+def _compute_ow_trend(snaps) -> dict | None:
+    baseline, period = _trend_baseline(snaps)
+    if baseline is None:
+        return None
+    latest = snaps[0]
+    games_delta = wr_delta = kda_delta = None
+    if latest.games_played is not None and baseline.games_played is not None:
+        games_delta = latest.games_played - baseline.games_played
+    if latest.win_rate is not None and baseline.win_rate is not None:
+        wr_delta = round((latest.win_rate - baseline.win_rate) * 100, 1)
+    if latest.kda is not None and baseline.kda is not None:
+        kda_delta = round(latest.kda - baseline.kda, 2)
+    return {"games_delta": games_delta, "wr_delta": wr_delta, "kda_delta": kda_delta, "period": period}
+
+
+def _compute_hll_trend(snaps) -> dict | None:
+    baseline, period = _trend_baseline(snaps)
+    if baseline is None:
+        return None
+    latest = snaps[0]
+    lgd, bgd = latest.game_data or {}, baseline.game_data or {}
+    kills_delta = pt_delta = None
+    if lgd.get("kills") is not None and bgd.get("kills") is not None:
+        kills_delta = lgd["kills"] - bgd["kills"]
+    if lgd.get("playtime_forever") is not None and bgd.get("playtime_forever") is not None:
+        pt_delta = lgd["playtime_forever"] - bgd["playtime_forever"]
+    return {"kills_delta": kills_delta, "pt_delta": pt_delta, "period": period}
+
+
 @router.get("/", response_class=HTMLResponse)
 async def index(request: Request, db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(Player).order_by(Player.added_at))
@@ -211,14 +265,14 @@ async def index(request: Request, db: AsyncSession = Depends(get_db)):
             select(StatSnapshot)
             .where(StatSnapshot.player_id == player.id)
             .order_by(StatSnapshot.fetched_at.desc())
-            .limit(1)
+            .limit(20)
         )
-        latest = snap_result.scalar_one_or_none()
-        item = {"player": player, "snapshot": latest}
+        snaps = snap_result.scalars().all()
+        latest = snaps[0] if snaps else None
         if player.game == "hell_let_loose":
-            hll_players.append(item)
+            hll_players.append({"player": player, "snapshot": latest, "trend": _compute_hll_trend(snaps)})
         else:
-            ow_players.append(item)
+            ow_players.append({"player": player, "snapshot": latest, "trend": _compute_ow_trend(snaps)})
 
     return templates.TemplateResponse("index.html", {
         "request": request,
@@ -238,7 +292,7 @@ async def player_detail(request: Request, battletag: str, db: AsyncSession = Dep
         select(StatSnapshot)
         .where(StatSnapshot.player_id == player.id)
         .order_by(StatSnapshot.fetched_at.desc())
-        .limit(100)
+        .limit(500)
     )
     snapshots = snaps_result.scalars().all()
 
