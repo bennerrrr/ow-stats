@@ -24,11 +24,35 @@ A self-hosted stats tracker for **Overwatch 2** and **Hell Let Loose**. Periodic
 
 ### Docker (recommended)
 
+The image is published to GitHub Container Registry on every merge to `main` and supports `linux/amd64` and `linux/arm64` (Raspberry Pi, Apple Silicon via Rosetta, etc.).
+
 ```bash
 cp .env.example .env
 # Edit .env with your values
 
-docker-compose up -d
+docker compose pull   # fetch the latest image from ghcr.io
+docker compose up -d
+```
+
+To update to the latest version later:
+
+```bash
+docker compose pull && docker compose up -d
+```
+
+> **First run / existing data migration:** the compose file uses a named Docker volume (`ow_stats_data`) for the SQLite database. If you have an existing `./data/ow_stats.db`, copy it into the volume before starting:
+> ```bash
+> docker run --rm -v $(pwd)/data:/src -v ow_stats_data:/dst alpine cp -a /src/. /dst/
+> ```
+
+### Building from source
+
+```bash
+cp .env.example .env
+# Edit .env with your values
+
+docker compose build
+docker compose up -d
 ```
 
 ### Local
