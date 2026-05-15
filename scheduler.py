@@ -58,33 +58,53 @@ async def _snapshot_ow(battletag: str) -> None:
         player.display_name = data.username
         player.avatar_url = data.avatar
 
-        snapshot = StatSnapshot(
-            player_id=player.id,
-            fetched_at=datetime.now(timezone.utc),
-            rank_tank=data.rank_tank,
-            rank_damage=data.rank_damage,
-            rank_support=data.rank_support,
-            rank_open=data.rank_open,
-            games_played=data.games_played,
-            games_won=data.games_won,
-            games_lost=data.games_lost,
-            kda=data.kda,
-            win_rate=data.win_rate,
-            top_heroes=[
-                {"hero": h.hero, "name": h.name, "time_played": h.time_played,
-                 "win_rate": h.win_rate, "kda": h.kda,
-                 "damage_per_10_min": h.damage_per_10_min,
-                 "healing_per_10_min": h.healing_per_10_min,
-                 "eliminations_per_10_min": h.eliminations_per_10_min}
-                for h in data.top_heroes
-            ],
-            stats_by_gamemode=data.stats_by_gamemode,
-            raw_summary=data.raw_summary,
-            raw_stats=data.raw_stats,
-        )
-        session.add(snapshot)
+        new_comparable = {
+            "rank_tank": data.rank_tank,
+            "rank_damage": data.rank_damage,
+            "rank_support": data.rank_support,
+            "rank_open": data.rank_open,
+            "games_played": data.games_played,
+            "kda": data.kda,
+            "win_rate": data.win_rate,
+        }
+        prev_too_old = prev_snapshot is None or (
+            datetime.now(timezone.utc) - prev_snapshot.fetched_at.replace(tzinfo=timezone.utc)
+        ).total_seconds() > 86400
+        should_snapshot = prev_too_old or _ow_ranks_or_stats_changed(prev_dict, new_comparable)
+
+        if should_snapshot:
+            snapshot = StatSnapshot(
+                player_id=player.id,
+                fetched_at=datetime.now(timezone.utc),
+                rank_tank=data.rank_tank,
+                rank_damage=data.rank_damage,
+                rank_support=data.rank_support,
+                rank_open=data.rank_open,
+                games_played=data.games_played,
+                games_won=data.games_won,
+                games_lost=data.games_lost,
+                kda=data.kda,
+                win_rate=data.win_rate,
+                top_heroes=[
+                    {"hero": h.hero, "name": h.name, "time_played": h.time_played,
+                     "win_rate": h.win_rate, "kda": h.kda,
+                     "damage_per_10_min": h.damage_per_10_min,
+                     "healing_per_10_min": h.healing_per_10_min,
+                     "eliminations_per_10_min": h.eliminations_per_10_min}
+                    for h in data.top_heroes
+                ],
+                stats_by_gamemode=data.stats_by_gamemode,
+                raw_summary=data.raw_summary,
+                raw_stats=data.raw_stats,
+            )
+            session.add(snapshot)
+            fetched_at = snapshot.fetched_at
+            logger.info("OW snapshot saved for %s", battletag)
+        else:
+            fetched_at = datetime.now(timezone.utc)
+            logger.debug("No OW stat change for %s, skipping snapshot", battletag)
+
         await session.commit()
-        logger.info("OW snapshot saved for %s", battletag)
 
     # Session tracking: accumulate deltas across polls and fire the report
     # only once a full poll cycle passes with no new games. This handles the
@@ -102,7 +122,7 @@ async def _snapshot_ow(battletag: str) -> None:
         "rank_damage": data.rank_damage,
         "rank_support": data.rank_support,
         "rank_open": data.rank_open,
-        "fetched_at": snapshot.fetched_at,
+        "fetched_at": fetched_at,
     }
 
     if prev_games is not None and new_games is not None and new_games > prev_games:
@@ -172,7 +192,8 @@ async def _snapshot_hll(steam_id: str) -> None:
             .limit(1)
         )
         prev_snapshot = prev_result.scalar_one_or_none()
-        prev_playtime = (prev_snapshot.game_data or {}).get("playtime_forever") if prev_snapshot else None
+        prev_gd_stored = (prev_snapshot.game_data or {}) if prev_snapshot else {}
+        prev_playtime = prev_gd_stored.get("playtime_forever")
 
         player.display_name = data.display_name
         player.avatar_url = data.avatar
@@ -194,18 +215,27 @@ async def _snapshot_hll(steam_id: str) -> None:
             "role_xp":          data.role_xp,
         }
 
-        snapshot = StatSnapshot(
-            player_id=player.id,
-            fetched_at=datetime.now(timezone.utc),
-            game_data=game_data,
-        )
-        session.add(snapshot)
+        prev_too_old_hll = prev_snapshot is None or (
+            datetime.now(timezone.utc) - prev_snapshot.fetched_at.replace(tzinfo=timezone.utc)
+        ).total_seconds() > 86400
+        should_snapshot_hll = prev_too_old_hll or _hll_stats_changed(prev_gd_stored, game_data)
+
+        if should_snapshot_hll:
+            snapshot = StatSnapshot(
+                player_id=player.id,
+                fetched_at=datetime.now(timezone.utc),
+                game_data=game_data,
+            )
+            session.add(snapshot)
+            logger.info("HLL snapshot saved for %s — %s kills, %s playtime min",
+                        steam_id, data.kills, data.playtime_forever)
+        else:
+            logger.debug("No HLL stat change for %s, skipping snapshot", steam_id)
+
         await session.commit()
-        logger.info("HLL snapshot saved for %s — %s kills, %s playtime min",
-                    steam_id, data.kills, data.playtime_forever)
 
     new_playtime = data.playtime_forever
-    prev_gd = (prev_snapshot.game_data or {}) if prev_snapshot else {}
+    prev_gd = prev_gd_stored
 
     def _snap_stat(key):
         return prev_gd.get(key)
@@ -277,6 +307,13 @@ async def snapshot_player(battletag: str) -> None:
         await _snapshot_hll(battletag)
     else:
         await _snapshot_ow(battletag)
+
+
+def _hll_stats_changed(prev: dict, new: dict) -> bool:
+    for key in ("kills", "total_xp", "playtime_forever", "headshots", "sector_caps"):
+        if prev.get(key) != new.get(key):
+            return True
+    return False
 
 
 def _ow_ranks_or_stats_changed(prev: dict, new: dict) -> bool:

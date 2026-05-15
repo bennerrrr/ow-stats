@@ -100,46 +100,78 @@
   }
 
   function initOWChart(canvas, data) {
+    const hasComp = data.some(d => d.comp_win_rate != null);
+    const hasQP   = data.some(d => d.qp_win_rate != null);
+    const datasets = [
+      {
+        label: 'Win Rate %',
+        data: data.map(d => d.win_rate),
+        borderColor: '#F99E1A',
+        backgroundColor: 'rgba(249,158,26,0.08)',
+        fill: true,
+        yAxisID: 'yWR',
+        tension: 0.3,
+        pointRadius: 4,
+        pointHoverRadius: 6,
+        spanGaps: true,
+      },
+      {
+        label: 'KDA',
+        data: data.map(d => d.kda),
+        borderColor: '#4A90D9',
+        backgroundColor: 'rgba(74,144,217,0.06)',
+        fill: false,
+        yAxisID: 'yKDA',
+        tension: 0.3,
+        pointRadius: 4,
+        pointHoverRadius: 6,
+        spanGaps: true,
+      },
+    ];
+    if (hasComp) datasets.push({
+      label: 'Comp Win Rate %',
+      data: data.map(d => d.comp_win_rate),
+      borderColor: '#E57373',
+      backgroundColor: 'transparent',
+      fill: false,
+      yAxisID: 'yWR',
+      tension: 0.3,
+      pointRadius: 3,
+      pointHoverRadius: 5,
+      borderDash: [5, 3],
+      spanGaps: true,
+    });
+    if (hasQP) datasets.push({
+      label: 'QP Win Rate %',
+      data: data.map(d => d.qp_win_rate),
+      borderColor: '#81C784',
+      backgroundColor: 'transparent',
+      fill: false,
+      yAxisID: 'yWR',
+      tension: 0.3,
+      pointRadius: 3,
+      pointHoverRadius: 5,
+      borderDash: [5, 3],
+      spanGaps: true,
+    });
     statsChart = new Chart(canvas, {
       type: 'line',
-      data: {
-        labels: data.map(d => d.date),
-        datasets: [
-          {
-            label: 'Win Rate %',
-            data: data.map(d => d.win_rate),
-            borderColor: '#F99E1A',
-            backgroundColor: 'rgba(249,158,26,0.08)',
-            fill: true,
-            yAxisID: 'yWR',
-            tension: 0.3,
-            pointRadius: 4,
-            pointHoverRadius: 6,
-            spanGaps: true,
-          },
-          {
-            label: 'KDA',
-            data: data.map(d => d.kda),
-            borderColor: '#4A90D9',
-            backgroundColor: 'rgba(74,144,217,0.06)',
-            fill: false,
-            yAxisID: 'yKDA',
-            tension: 0.3,
-            pointRadius: 4,
-            pointHoverRadius: 6,
-            spanGaps: true,
-          },
-        ]
-      },
+      data: { labels: data.map(d => d.date), datasets },
       options: _chartOptions({
         yWR: { position: 'left',  color: '#F99E1A', callback: v => v + '%' },
         yKDA: { position: 'right', color: '#4A90D9', callback: null },
-      }, (ctx) => ctx.datasetIndex === 0 ? ` Win Rate: ${ctx.parsed.y}%` : ` KDA: ${ctx.parsed.y}`),
+      }, (ctx) => {
+        const l = ctx.dataset.label;
+        const v = ctx.parsed.y;
+        if (l === 'KDA') return ` KDA: ${v}`;
+        return ` ${l}: ${v}%`;
+      }),
     });
   }
 
   function initHLLChart(canvas, data) {
-    const hasXP = data.some(d => d.xp != null);
+    const hasXP       = data.some(d => d.xp != null);
+    const hasHeadshots = data.some(d => d.headshots != null);
     const datasets = [
       {
         label: 'Career Kills',
@@ -154,29 +186,44 @@
         spanGaps: true,
       },
     ];
-    if (hasXP) {
-      datasets.push({
-        label: 'Total XP',
-        data: data.map(d => d.xp),
-        borderColor: '#78909C',
-        backgroundColor: 'transparent',
-        fill: false,
-        yAxisID: 'yXP',
-        tension: 0.3,
-        pointRadius: 3,
-        pointHoverRadius: 5,
-        borderDash: [4, 3],
-        spanGaps: true,
-      });
-    }
+    if (hasXP) datasets.push({
+      label: 'Total XP',
+      data: data.map(d => d.xp),
+      borderColor: '#78909C',
+      backgroundColor: 'transparent',
+      fill: false,
+      yAxisID: 'yXP',
+      tension: 0.3,
+      pointRadius: 3,
+      pointHoverRadius: 5,
+      borderDash: [4, 3],
+      spanGaps: true,
+    });
+    if (hasHeadshots) datasets.push({
+      label: 'Headshots',
+      data: data.map(d => d.headshots),
+      borderColor: '#FFB74D',
+      backgroundColor: 'transparent',
+      fill: false,
+      yAxisID: 'yKills',
+      tension: 0.3,
+      pointRadius: 3,
+      pointHoverRadius: 5,
+      borderDash: [2, 3],
+      spanGaps: true,
+    });
     const axes = { yKills: { position: 'left', color: '#5C6BC0', callback: v => v >= 1000 ? (v/1000).toFixed(1)+'k' : v } };
     if (hasXP) axes.yXP = { position: 'right', color: '#78909C', callback: v => v >= 1000000 ? (v/1000000).toFixed(1)+'M' : v >= 1000 ? (v/1000).toFixed(0)+'k' : v };
     statsChart = new Chart(canvas, {
       type: 'line',
       data: { labels: data.map(d => d.date), datasets },
-      options: _chartOptions(axes, ctx => ctx.dataset.label === 'Career Kills'
-        ? ` Kills: ${ctx.parsed.y?.toLocaleString()}`
-        : ` XP: ${ctx.parsed.y?.toLocaleString()}`),
+      options: _chartOptions(axes, ctx => {
+        const l = ctx.dataset.label;
+        const v = ctx.parsed.y?.toLocaleString();
+        if (l === 'Career Kills') return ` Kills: ${v}`;
+        if (l === 'Headshots') return ` Headshots: ${v}`;
+        return ` XP: ${v}`;
+      }),
     });
   }
 

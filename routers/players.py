@@ -46,6 +46,11 @@ def _snapshots_to_json(snapshots) -> str:
         wr = round(s.win_rate * 100, 1) if s.win_rate is not None else None
         kda = round(s.kda, 2) if s.kda is not None else None
         gp = s.games_played
+        sbg = s.stats_by_gamemode or {}
+        comp = sbg.get("competitive") or {}
+        qp = sbg.get("quickplay") or {}
+        comp_wr = round(comp.get("win_rate") * 100, 1) if comp.get("win_rate") is not None else None
+        qp_wr = round(qp.get("win_rate") * 100, 1) if qp.get("win_rate") is not None else None
         if prev is None or (wr, kda, gp) != prev:
             ts = s.fetched_at if s.fetched_at.tzinfo else s.fetched_at.replace(tzinfo=timezone.utc)
             result.append({
@@ -54,6 +59,8 @@ def _snapshots_to_json(snapshots) -> str:
                 "win_rate": wr,
                 "kda": kda,
                 "games_played": gp,
+                "comp_win_rate": comp_wr,
+                "qp_win_rate": qp_wr,
             })
             prev = (wr, kda, gp)
     return json.dumps(result)
@@ -74,6 +81,8 @@ def _hll_snapshots_to_json(snapshots) -> str:
                 "date": _to_display_tz(s.fetched_at).strftime("%b %d %H:%M %Z"),
                 "kills": kills,
                 "xp": xp,
+                "headshots": gd.get("headshots"),
+                "sector_caps": gd.get("sector_caps"),
             })
             prev = (kills, xp)
     return json.dumps(result)
