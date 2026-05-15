@@ -1,5 +1,7 @@
 # ow-stats
 
+[![Docker Image](https://github.com/bennerrrr/ow-stats/actions/workflows/docker-image.yml/badge.svg)](https://github.com/bennerrrr/ow-stats/actions/workflows/docker-image.yml)
+
 A self-hosted stats tracker for **Overwatch 2** and **Hell Let Loose**. Periodically polls player data from public APIs, stores historical snapshots in SQLite, and serves a web dashboard with charts. Optionally pushes session summaries and rank-change alerts to Discord.
 
 ## Features
