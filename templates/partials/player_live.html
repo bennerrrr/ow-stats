@@ -1,6 +1,7 @@
 {# Snapshot data for Chart.js #}
 <script type="application/json" id="snapshot-data">{{ snapshots_json | safe }}</script>
 
+{% if not snapshots %}<p class="text-gray-500 italic">No snapshots yet.</p>{% else %}
 {% set latest = snapshots[0] %}
 
 {# ═══════════════════════════════════════════════════════════════
@@ -581,3 +582,4 @@
 </section>
 
 {% endif %}{# end OW/HLL branch #}
+{% endif %}{# end snapshots guard #}

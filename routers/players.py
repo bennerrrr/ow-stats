@@ -269,12 +269,13 @@ async def index(request: Request, db: AsyncSession = Depends(get_db)):
     players = result.scalars().all()
 
     ow_players, hll_players = [], []
+    index_cutoff = datetime.now(timezone.utc) - timedelta(days=7)
     for player in players:
         snap_result = await db.execute(
             select(StatSnapshot)
             .where(StatSnapshot.player_id == player.id)
+            .where(StatSnapshot.fetched_at >= index_cutoff)
             .order_by(StatSnapshot.fetched_at.desc())
-            .limit(20)
         )
         snaps = snap_result.scalars().all()
         latest = snaps[0] if snaps else None
@@ -297,11 +298,12 @@ async def player_detail(request: Request, battletag: str, db: AsyncSession = Dep
     if player is None:
         raise HTTPException(status_code=404, detail="Player not found")
 
+    cutoff = datetime.now(timezone.utc) - timedelta(days=90)
     snaps_result = await db.execute(
         select(StatSnapshot)
         .where(StatSnapshot.player_id == player.id)
+        .where(StatSnapshot.fetched_at >= cutoff)
         .order_by(StatSnapshot.fetched_at.desc())
-        .limit(500)
     )
     snapshots = snaps_result.scalars().all()
 
@@ -412,13 +414,17 @@ async def refresh_player(battletag: str, request: Request, db: AsyncSession = De
     await snapshot_player(battletag)
 
     if request.headers.get("X-Requested-With") == "XMLHttpRequest":
+        await db.refresh(player)
+        cutoff = datetime.now(timezone.utc) - timedelta(days=90)
         snaps_result = await db.execute(
             select(StatSnapshot)
             .where(StatSnapshot.player_id == player.id)
+            .where(StatSnapshot.fetched_at >= cutoff)
             .order_by(StatSnapshot.fetched_at.desc())
-            .limit(100)
         )
         snapshots = snaps_result.scalars().all()
+        if not snapshots:
+            raise HTTPException(status_code=503, detail="No snapshots available")
         ctx = _build_player_context(player, snapshots)
         return templates.TemplateResponse(
             "partials/player_live.html", {"request": request, **ctx}
