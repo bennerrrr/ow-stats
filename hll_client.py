@@ -8,6 +8,10 @@ import httpx
 
 logger = logging.getLogger(__name__)
 
+
+def _slog(value: str) -> str:
+    return str(value).replace("\n", " ").replace("\r", " ")
+
 STEAM_API_BASE = "https://api.steampowered.com"
 HLL_APP_ID = 686810
 
@@ -154,7 +158,7 @@ async def fetch_player(steam_id: str, api_key: str) -> HLLPlayerData:
         }
         logger.info(
             "HLL stats for %s: %d stat fields returned. Combat sample — kills=%s xp=%s",
-            steam_id,
+            _slog(steam_id),
             len(raw_stats),
             raw_stats.get("ACHSTAT_EnemyKills"),
             raw_stats.get("player_xp"),
@@ -166,9 +170,9 @@ async def fetch_player(steam_id: str, api_key: str) -> HLLPlayerData:
             if steam_key in raw_stats and raw_stats[steam_key] > 0:
                 role_xp[role_name] = raw_stats[steam_key]
     elif stats_resp.status_code == 403:
-        logger.warning("HLL stats for %s are private (403) — game details not public", steam_id)
+        logger.warning("HLL stats for %s are private (403) — game details not public", _slog(steam_id))
     else:
-        logger.warning("HLL stats request failed for %s: HTTP %d", steam_id, stats_resp.status_code)
+        logger.warning("HLL stats request failed for %s: HTTP %d", _slog(steam_id), stats_resp.status_code)
 
     top_role = max(role_xp, key=role_xp.get) if role_xp else None
 

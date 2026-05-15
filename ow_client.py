@@ -2,6 +2,7 @@ import asyncio
 import time
 from dataclasses import dataclass, field
 from typing import Optional
+from urllib.parse import quote
 import httpx
 
 BASE_URL = "https://overfast-api.tekrop.fr"
@@ -73,7 +74,7 @@ HERO_ROLES: dict[str, str] = {
 
 
 def _battletag_to_url(battletag: str) -> str:
-    return battletag.replace("#", "-")
+    return quote(battletag.replace("#", "-"), safe="")
 
 
 def _rank_str(role_data: Optional[dict]) -> Optional[str]:

@@ -14,6 +14,10 @@ from hll_client import fetch_player as hll_fetch_player, PlayerNotFoundError as 
 logger = logging.getLogger(__name__)
 scheduler = AsyncIOScheduler()
 
+
+def _slog(value: str) -> str:
+    return str(value).replace("\n", " ").replace("\r", " ")
+
 # battletag -> {baseline, latest, player_name, avatar_url}
 _pending_sessions: dict[str, dict] = {}
 
@@ -22,13 +26,13 @@ async def _snapshot_ow(battletag: str) -> None:
     try:
         data = await ow_fetch_player(battletag)
     except ProfilePrivateError:
-        logger.warning("Skipping %s — profile is private", battletag)
+        logger.warning("Skipping %s — profile is private", _slog(battletag))
         return
     except OWPlayerNotFoundError:
-        logger.warning("Skipping %s — player not found", battletag)
+        logger.warning("Skipping %s — player not found", _slog(battletag))
         return
     except OverFastError as e:
-        logger.error("OverFast API error for %s: %s", battletag, e)
+        logger.error("OverFast API error for %s: %s", _slog(battletag), e)
         return
 
     async with AsyncSessionLocal() as session:
@@ -99,10 +103,10 @@ async def _snapshot_ow(battletag: str) -> None:
             )
             session.add(snapshot)
             fetched_at = snapshot.fetched_at
-            logger.info("OW snapshot saved for %s", battletag)
+            logger.info("OW snapshot saved for %s", _slog(battletag))
         else:
             fetched_at = datetime.now(timezone.utc)
-            logger.debug("No OW stat change for %s, skipping snapshot", battletag)
+            logger.debug("No OW stat change for %s, skipping snapshot", _slog(battletag))
 
         await session.commit()
 
@@ -160,23 +164,23 @@ async def _snapshot_ow(battletag: str) -> None:
 async def _snapshot_hll(steam_id: str) -> None:
     api_key = os.getenv("STEAM_API_KEY", "")
     if not api_key:
-        logger.warning("STEAM_API_KEY not set — skipping HLL player %s", steam_id)
+        logger.warning("STEAM_API_KEY not set — skipping HLL player %s", _slog(steam_id))
         return
 
     from hll_client import ProfilePrivateError as HLLPrivateError
     try:
         data = await hll_fetch_player(steam_id, api_key)
     except HLLPlayerNotFoundError:
-        logger.warning("Skipping HLL player %s — Steam ID not found", steam_id)
+        logger.warning("Skipping HLL player %s — Steam ID not found", _slog(steam_id))
         return
     except HLLPrivateError:
-        logger.warning("Skipping HLL player %s — Steam profile is private", steam_id)
+        logger.warning("Skipping HLL player %s — Steam profile is private", _slog(steam_id))
         return
     except HLLClientError as e:
-        logger.error("Steam API error for %s: %s", steam_id, e)
+        logger.error("Steam API error for %s: %s", _slog(steam_id), e)
         return
     except Exception as e:
-        logger.error("Unexpected HLL client error for %s: %s", steam_id, e)
+        logger.error("Unexpected HLL client error for %s: %s", _slog(steam_id), e)
         return
 
     async with AsyncSessionLocal() as session:
@@ -228,9 +232,9 @@ async def _snapshot_hll(steam_id: str) -> None:
             )
             session.add(snapshot)
             logger.info("HLL snapshot saved for %s — %s kills, %s playtime min",
-                        steam_id, data.kills, data.playtime_forever)
+                        _slog(steam_id), data.kills, data.playtime_forever)
         else:
-            logger.debug("No HLL stat change for %s, skipping snapshot", steam_id)
+            logger.debug("No HLL stat change for %s, skipping snapshot", _slog(steam_id))
 
         await session.commit()
 
@@ -333,7 +337,7 @@ async def _send_ow_report(player_name, battletag, avatar_url, prev, new):
         from discord_bot import send_game_report
         await send_game_report(player_name, battletag, avatar_url, prev, new)
     except Exception as e:
-        logger.error("Error sending OW game report for %s: %s", battletag, e)
+        logger.error("Error sending OW game report for %s: %s", _slog(battletag), e)
 
 
 async def _send_stats_update(player_name, battletag, avatar_url, prev, new):
@@ -341,7 +345,7 @@ async def _send_stats_update(player_name, battletag, avatar_url, prev, new):
         from discord_bot import send_stats_update
         await send_stats_update(player_name, battletag, avatar_url, prev, new)
     except Exception as e:
-        logger.error("Error sending stats update for %s: %s", battletag, e)
+        logger.error("Error sending stats update for %s: %s", _slog(battletag), e)
 
 
 async def _send_hll_session_report(player_name, steam_id, avatar_url, duration_minutes,
@@ -354,7 +358,7 @@ async def _send_hll_session_report(player_name, steam_id, avatar_url, duration_m
             kills_delta, headshots_delta, sector_caps_delta, xp_delta, top_role,
         )
     except Exception as e:
-        logger.error("Error sending HLL session report for %s: %s", steam_id, e)
+        logger.error("Error sending HLL session report for %s: %s", _slog(steam_id), e)
 
 
 async def poll_all_players() -> None:

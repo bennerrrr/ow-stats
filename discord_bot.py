@@ -15,6 +15,10 @@ from ow_client import OverFastError, PlayerNotFoundError as OWPlayerNotFoundErro
 
 logger = logging.getLogger(__name__)
 
+
+def _slog(value: str) -> str:
+    return str(value).replace("\n", " ").replace("\r", " ")
+
 OW_COLOR  = 0xF99E1A
 HLL_COLOR = 0x5C6BC0  # muted indigo — military feel
 WIN_COLOR  = 0x57F287
@@ -381,7 +385,7 @@ async def send_game_report(
     new: dict,
 ) -> None:
     if not bot.is_ready():
-        logger.warning("Bot not ready — queuing game report for %s", battletag)
+        logger.warning("Bot not ready — queuing game report for %s", _slog(battletag))
         _notification_queue.append(lambda: send_game_report(player_name, battletag, avatar_url, prev, new))
         return
     embed = build_game_report_embed(player_name, battletag, avatar_url, prev, new)
@@ -396,7 +400,7 @@ async def send_stats_update(
     new: dict,
 ) -> None:
     if not bot.is_ready():
-        logger.warning("Bot not ready — queuing stats update for %s", battletag)
+        logger.warning("Bot not ready — queuing stats update for %s", _slog(battletag))
         _notification_queue.append(lambda: send_stats_update(player_name, battletag, avatar_url, prev, new))
         return
     embed = build_stats_update_embed(player_name, battletag, avatar_url, prev, new)
@@ -415,7 +419,7 @@ async def send_hll_session_report(
     top_role: str | None = None,
 ) -> None:
     if not bot.is_ready():
-        logger.warning("Bot not ready — queuing HLL session report for %s", steam_id)
+        logger.warning("Bot not ready — queuing HLL session report for %s", _slog(steam_id))
         _notification_queue.append(lambda: send_hll_session_report(
             player_name, steam_id, avatar_url, duration_minutes,
             kills_delta, headshots_delta, sector_caps_delta, xp_delta, top_role,
