@@ -513,4 +513,4 @@ async def refresh_player(battletag: str, request: Request, db: AsyncSession = De
             "partials/player_live.html", {"request": request, **ctx}
         )
 
-    return RedirectResponse(f"/players/{quote(battletag, safe='')}", status_code=303)
+    return RedirectResponse(f"/players/{quote(player.battletag, safe='')}", status_code=303)

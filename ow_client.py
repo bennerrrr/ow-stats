@@ -1,4 +1,5 @@
 import asyncio
+import re
 import time
 from dataclasses import dataclass, field
 from typing import Optional
@@ -9,12 +10,19 @@ BASE_URL = "https://overfast-api.tekrop.fr"
 _cache: dict[str, tuple[float, dict]] = {}
 CACHE_TTL = 3600  # 1 hour
 
+# Allowlist: standard battletag (Name#1234) or non-standard hash/UUID — no path separators
+_BATTLETAG_RE = re.compile(r'^[\w][\w .\-]{0,47}(#\d{4,5})?$')
+
 
 class ProfilePrivateError(Exception):
     pass
 
 
 class PlayerNotFoundError(Exception):
+    pass
+
+
+class InvalidBattletagError(ValueError):
     pass
 
 
@@ -152,6 +160,8 @@ def _parse_stats(data: dict) -> dict:
 
 
 async def fetch_player(battletag: str) -> PlayerData:
+    if not _BATTLETAG_RE.match(battletag):
+        raise InvalidBattletagError(f"Invalid battletag: {battletag!r}")
     url_tag = _battletag_to_url(battletag)
     now = time.time()
 
