@@ -1,14 +1,15 @@
 # ow-stats
 
-A self-hosted stats tracker for **Overwatch 2** and **Hell Let Loose**. Periodically polls player data, stores historical snapshots, serves a web dashboard with charts, and sends session summaries and rank-change alerts to Discord.
+A self-hosted stats tracker for **Overwatch 2** and **Hell Let Loose**. Periodically polls player data from public APIs, stores historical snapshots in SQLite, and serves a web dashboard with charts. Optionally pushes session summaries and rank-change alerts to Discord.
 
 ## Features
 
-- Track multiple players across Overwatch 2 and Hell Let Loose
-- Automatic periodic polling (configurable interval)
-- Web dashboard with per-player stat history and Chart.js visualizations
-- Session detection — reports play session summaries after a player goes offline
-- Discord bot integration: slash commands, session reports, rank change alerts
+- Track multiple players across Overwatch 2 and Hell Let Loose from a single dashboard
+- Automatic periodic polling on a configurable interval, with smart deduplication (snapshots only written when stats change or after 24 hours)
+- Per-player detail pages with Chart.js charts, rank history, and play session breakdowns
+- Session detection — Discord alerts fire once a play session ends, not mid-session
+- Discord bot with slash commands for adding/removing players, looking up stats, and managing notification channels
+- Admin utility panel at `/utils` for DB export, import, vacuum, health checks, and on-demand polling
 
 ## Stack
 
@@ -18,6 +19,15 @@ A self-hosted stats tracker for **Overwatch 2** and **Hell Let Loose**. Periodic
 - **External APIs:** [OverFast API](https://overfast-api.tekrop.fr) (OW2), Steam Web API (HLL)
 
 ## Setup
+
+### Docker (recommended)
+
+```bash
+cp .env.example .env
+# Edit .env with your values
+
+docker-compose up -d
+```
 
 ### Local
 
@@ -29,16 +39,7 @@ pip install -r requirements.txt
 cp .env.example .env
 # Edit .env with your values
 
-uvicorn main:app --reload --host 0.0.0.0 --port 8000
-```
-
-### Docker
-
-```bash
-cp .env.example .env
-# Edit .env with your values
-
-docker-compose up -d
+uvicorn main:app --host 0.0.0.0 --port 8000
 ```
 
 The dashboard is available at `http://localhost:8000`.
@@ -49,30 +50,116 @@ Copy `.env.example` to `.env` and fill in the values:
 
 | Variable | Required | Default | Description |
 |---|---|---|---|
-| `TRACKED_PLAYERS` | Yes | — | Comma-separated player list (see format below) |
+| `TRACKED_PLAYERS` | No | — | Comma-separated players to seed on first startup (see format below) |
 | `DATABASE_URL` | No | `sqlite+aiosqlite:///./data/ow_stats.db` | SQLite connection string |
-| `POLL_INTERVAL_MINUTES` | No | `30` | How often to fetch stats |
-| `DISPLAY_TIMEZONE` | No | `America/New_York` | IANA timezone for the web UI |
-| `DISCORD_BOT_TOKEN` | No | — | Discord bot token; leave blank to disable |
-| `STEAM_API_KEY` | HLL only | — | Steam Web API key for Hell Let Loose players |
+| `POLL_INTERVAL_MINUTES` | No | `30` | How often to fetch stats for all players |
+| `DISPLAY_TIMEZONE` | No | `America/New_York` | IANA timezone used for timestamps in the web UI |
+| `DISCORD_BOT_TOKEN` | No | — | Discord bot token; leave blank to disable the bot entirely |
+| `STEAM_API_KEY` | HLL only | — | Steam Web API key required for Hell Let Loose players |
+| `UTILS_TOKEN` | No | — | Secret token for the `/utils` admin panel; leave blank to disable |
 
 ### Player format
 
 ```
-# Overwatch 2 — use the battletag
+# Overwatch 2 — use the BattleTag (Username#1234)
 TRACKED_PLAYERS=Ben#1234,Alice#5678
 
-# Hell Let Loose — append :hll with the Steam64 ID
-TRACKED_PLAYERS=Ben#1234,76561198012345678:hll
+# Hell Let Loose — use the 17-digit Steam64 ID, suffixed with :hll
+TRACKED_PLAYERS=76561198012345678:hll
 
 # Mixed
 TRACKED_PLAYERS=Ben#1234,Alice#5678,76561198012345678:hll
 ```
 
-Players listed in `TRACKED_PLAYERS` are seeded into the database on first startup. Additional players can be added later via the Discord bot's `/add` slash command or the web UI.
+Players in `TRACKED_PLAYERS` are seeded into the database on first startup only. Additional players can be added at any time via the web UI or the Discord `/add_player` command.
+
+## Web Dashboard
+
+### Hub (`/`)
+
+Landing page showing the total number of tracked operators for each game, linking to the game-specific pages.
+
+### Game pages (`/overwatch`, `/hll`)
+
+Grid of player cards, each showing the latest snapshot. For OW2 cards: competitive ranks across all four queues, overall win rate and KDA, top hero, and a 7-day trend line (win rate delta and KDA delta). For HLL cards: career kills, playtime, and a 7-day kills/playtime trend. Each card has inline REFRESH and REMOVE actions, plus a link to the full player detail page.
+
+### Player detail (`/players/{battletag}`)
+
+Per-player page with:
+
+- **Rank chart** (OW2 only) — stepped line chart of rank changes over the past 90 days, one line per queue (tank, damage, support, open), with tier-coloured axes
+- **Stats chart** — OW2: win rate and KDA over time with dual Y-axes; HLL: career kills and total XP over time
+- **Chart filter** — client-side date filter (7d / 30d / 90d / all), defaulting to 30d when data spans more than 30 days
+- **Career stats** — OW2: role breakdown (tank/damage/support games, W/L, KDA), top hero table with time played, gamemode tabs (competitive/quickplay); HLL: kill rate, headshot %, sector caps, XP, role breakdown
+- **Session history** — OW2: a row per detected play session showing games, wins/losses, WR, KDA delta; HLL: session rows with playtime duration, kills, and XP gained
+- **Rank history table** (OW2) — chronological list of distinct rank states over the 90-day window
+- **Refresh button** — force-fetches fresh data from the API and updates the page via AJAX without a full reload
 
 ## Discord Bot
 
-To enable Discord notifications, create a bot at [discord.com/developers/applications](https://discord.com/developers/applications), copy the token into `DISCORD_BOT_TOKEN`, and invite the bot to your server with the `bot` and `applications.commands` scopes.
+### Setup
 
-Once the bot is in a server you can use `/setchannel` to designate a channel for notifications.
+1. Create an application and bot at [discord.com/developers/applications](https://discord.com/developers/applications)
+2. Copy the bot token into `DISCORD_BOT_TOKEN` in `.env`
+3. Invite the bot to your server with the `bot` and `applications.commands` scopes
+4. Use `/set_channel` in any channel to start receiving notifications there
+
+### Slash commands
+
+| Command | Description |
+|---|---|
+| `/add_player player_id [game]` | Start tracking a player. `player_id` is a BattleTag (`Name#1234`) for OW2 or a Steam64 ID for HLL. `game` defaults to Overwatch 2. Fetches and displays a stats embed on success. |
+| `/remove_player player_id` | Stop tracking a player. `player_id` autocompletes from all tracked players. |
+| `/stats player_id` | Show the latest stats for a tracked player. For OW2, also supports live lookup of any BattleTag even if not tracked. |
+| `/players` | List all currently tracked players grouped by game. |
+| `/set_channel [game]` | Register the current channel to receive notifications. `game` can be "All games" (default), "Overwatch 2 only", or "Hell Let Loose only". Running the command again on an already-registered channel updates the game filter. |
+| `/remove_channel` | Unregister the current channel from notifications. |
+
+### Notifications
+
+Notifications are sent as Discord embeds to all registered channels that match the game filter.
+
+**OW2 — Session summary:** fires after a play session ends (detected when `games_played` stops increasing across polls). The embed shows session W/L, any rank changes during the session, and deltas for overall win rate and KDA compared to the session start.
+
+**OW2 — Stats update:** fires when ranks or aggregate stats change between polls with no corresponding increase in `games_played` (e.g. a rank adjustment or API data correction).
+
+**HLL — Session summary:** fires when `playtime_forever` stops increasing after a session. Shows session duration, kills, headshot rate, sector caps, and XP gained during the session.
+
+If the bot is disconnected when a notification is ready, it is queued in memory and flushed automatically once the bot reconnects.
+
+## Admin Utilities (`/utils`)
+
+Navigate to `/utils` in the browser. All actions require the `UTILS_TOKEN` set in `.env`; the token is saved in your browser's `localStorage` so you only need to enter it once.
+
+| Action | Description |
+|---|---|
+| **System Health** | Shows DB reachability and row counts, scheduler state and job count, Discord bot readiness and latency, and server uptime. Runs automatically on page load if a token is saved. |
+| **DB Export** | Downloads a clean, consistent binary snapshot of the SQLite database — safe to run while the app is live. Equivalent to `wget http://host/utils/db/export?token=SECRET`. |
+| **DB Import** | Upload a `.db` file to replace the live database. The uploaded file is validated against the expected schema before the swap is made. The scheduler is paused and the connection pool is drained atomically during the switch. |
+| **DB Vacuum** | Runs SQLite `VACUUM` to compact the database and reclaim space from deleted rows. Reports before/after file sizes. |
+| **Force Poll** | Immediately polls all tracked players outside the normal schedule. Waits for the full poll to complete before returning. |
+
+The same actions are also available as a JSON API:
+
+```bash
+# Health
+curl "http://localhost:8000/utils/health?token=SECRET"
+
+# Export
+wget "http://localhost:8000/utils/db/export?token=SECRET" -O backup.db
+
+# Import
+curl -X POST "http://localhost:8000/utils/db/import?token=SECRET" -F "file=@backup.db"
+
+# Vacuum
+curl -X POST "http://localhost:8000/utils/db/vacuum?token=SECRET"
+
+# Force poll
+curl -X POST "http://localhost:8000/utils/poll?token=SECRET"
+```
+
+## External API notes
+
+**Overwatch 2** data is fetched from [OverFast API](https://overfast-api.tekrop.fr), a free community-run API. No API key is required. Players must have their Career Profile set to **Public** in the Overwatch in-game settings — private profiles are skipped with a warning.
+
+**Hell Let Loose** data is pulled from the Steam Web API using the game's stats endpoint. A `STEAM_API_KEY` is required (free at [steamcommunity.com/dev/apikey](https://steamcommunity.com/dev/apikey)). The player's Steam profile visibility must be set to **Public** and their **Game details** must also be public, otherwise the poll is skipped.
