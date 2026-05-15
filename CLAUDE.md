@@ -1,5 +1,7 @@
 # CLAUDE.md — ow-stats
 
+**Git policy: always commit and push to the `dev` branch, never to `main`.**
+
 Self-hosted stats tracker for **Overwatch 2** and **Hell Let Loose**. Polls player APIs on a configurable interval, stores historical snapshots in SQLite, serves a web dashboard, and pushes session/rank alerts to Discord.
 
 ## Stack
