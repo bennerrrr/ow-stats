@@ -6,6 +6,7 @@ on:
 
 jobs:
   build:
+    if: github.head_ref == 'dev'
     runs-on: ubuntu-latest
     permissions:
       contents: read
