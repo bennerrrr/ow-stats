@@ -2,6 +2,11 @@
 
 **Git policy: always commit and push to the `dev` branch, never to `main`.**
 
+**Version tagging: before committing, ask the user whether this warrants a new version tag. If yes, ask which semver bump applies (`patch` / `minor` / `major`), then after pushing remind them to run:**
+```bash
+git checkout main && git merge dev && git tag vX.Y.Z && git push origin vX.Y.Z && git checkout dev
+```
+
 Self-hosted stats tracker for **Overwatch 2** and **Hell Let Loose**. Polls player APIs on a configurable interval, stores historical snapshots in SQLite, serves a web dashboard, and pushes session/rank alerts to Discord.
 
 ## Stack

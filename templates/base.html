@@ -100,5 +100,12 @@
     {% block content %}{% endblock %}
   </main>
 
+  <div style="position:fixed;bottom:12px;right:16px;font-size:0.6rem;letter-spacing:0.12em;color:#333;pointer-events:none;user-select:none;display:flex;align-items:center;gap:6px;">
+    {{ app_version }}
+    {% if app_version_outdated %}
+    <span style="color:#ef4444;letter-spacing:0.1em;" title="{{ app_version_latest }} available">● UPDATE</span>
+    {% endif %}
+  </div>
+
 </body>
 </html>

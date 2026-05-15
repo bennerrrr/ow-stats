@@ -14,9 +14,9 @@ from database import get_db
 from models import Player, StatSnapshot
 from ow_client import fetch_player as ow_fetch_player, ProfilePrivateError, PlayerNotFoundError as OWPlayerNotFoundError, OverFastError, InvalidBattletagError, HERO_ROLES
 from scheduler import snapshot_player
+from _templates import templates
 
 router = APIRouter()
-templates = Jinja2Templates(directory="templates")
 templates.env.filters["urltag"] = lambda t: t.replace("#", "%23")
 
 try:
