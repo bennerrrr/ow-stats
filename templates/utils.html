@@ -1,0 +1,306 @@
+{% extends "base.html" %}
+{% block title %}Utils — STATS.CMD{% endblock %}
+
+{% block content %}
+
+<!-- Page header -->
+<div class="flex items-end gap-4 mb-5">
+  <div>
+    <div class="text-xs text-gray-600 tracking-[0.25em] uppercase mb-1">// SYSTEM</div>
+    <h1 class="text-xl font-bold text-white tracking-wide">⚙ UTILITIES</h1>
+  </div>
+</div>
+
+<!-- Token section -->
+<div style="background:#111111;border:1px solid #272727;border-left:3px solid #444;" class="mb-6 px-4 py-4">
+  <div class="text-[10px] text-gray-600 tracking-[0.3em] uppercase mb-3">// ACCESS TOKEN</div>
+  <div class="flex items-center gap-2 flex-wrap">
+    <input type="password" id="token-input"
+      style="background:#0a0a0a;border:1px solid #333;"
+      class="px-3 py-1.5 text-xs text-white placeholder-gray-700 focus:outline-none focus:border-[#555] w-64"
+      placeholder="UTILS_TOKEN" />
+    <button onclick="saveToken()"
+      style="border:1px solid #333;"
+      class="px-4 py-1.5 text-xs font-bold uppercase tracking-wider text-gray-500 hover:text-gray-200 hover:border-[#555] transition-colors">
+      SAVE
+    </button>
+    <button onclick="clearToken()"
+      style="border:1px solid transparent;"
+      class="px-4 py-1.5 text-xs font-bold uppercase tracking-wider text-red-900 hover:text-red-500 hover:border-red-900 transition-colors">
+      CLEAR
+    </button>
+    <span id="token-status" class="text-[10px] text-gray-700 ml-1"></span>
+  </div>
+</div>
+
+<!-- Utilities grid -->
+<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+
+  <!-- Health check — full width -->
+  <div class="md:col-span-2" style="background:#111111;border:1px solid #272727;border-left:3px solid #555;">
+    <div class="p-5">
+      <div class="flex items-center justify-between mb-4">
+        <div>
+          <div class="text-[10px] text-gray-600 tracking-[0.3em] uppercase mb-1">DIAGNOSTIC</div>
+          <h2 class="text-sm font-bold text-white">SYSTEM HEALTH</h2>
+        </div>
+        <button onclick="checkHealth()" id="health-btn"
+          style="border:1px solid #333;"
+          class="px-4 py-1.5 text-xs font-bold uppercase tracking-wider text-gray-500 hover:text-gray-200 hover:border-[#555] transition-colors">
+          RUN CHECK
+        </button>
+      </div>
+      <div id="health-result" class="text-xs text-gray-700">// AWAITING INPUT</div>
+    </div>
+  </div>
+
+  <!-- DB Export -->
+  <div style="background:#111111;border:1px solid #272727;">
+    <div class="p-5">
+      <div class="text-[10px] text-gray-600 tracking-[0.3em] uppercase mb-1">DATABASE</div>
+      <h2 class="text-sm font-bold text-white mb-1">EXPORT</h2>
+      <p class="text-[10px] text-gray-700 mb-4">Download a clean consistent snapshot of the SQLite database. wget-compatible.</p>
+      <button onclick="doExport()"
+        style="border:1px solid #333;"
+        class="px-4 py-1.5 text-xs font-bold uppercase tracking-wider text-gray-500 hover:text-gray-200 hover:border-[#555] transition-colors">
+        ↓ DOWNLOAD .DB
+      </button>
+      <div id="export-result" class="text-[10px] text-gray-700 mt-2"></div>
+    </div>
+  </div>
+
+  <!-- DB Import -->
+  <div style="background:#111111;border:1px solid #272727;">
+    <div class="p-5">
+      <div class="text-[10px] text-gray-600 tracking-[0.3em] uppercase mb-1">DATABASE</div>
+      <h2 class="text-sm font-bold text-white mb-1">IMPORT</h2>
+      <p class="text-[10px] text-gray-700 mb-4">Replace the live database. Schema is validated before the swap is made.</p>
+      <div class="flex items-center gap-2 flex-wrap">
+        <label id="import-label"
+          style="background:#0a0a0a;border:1px solid #333;"
+          class="px-3 py-1.5 text-[10px] text-gray-600 cursor-pointer hover:border-[#555] transition-colors truncate max-w-[200px]">
+          <input type="file" id="import-file" accept=".db" class="hidden" onchange="updateImportLabel(this)" />
+          <span id="import-filename">CHOOSE FILE…</span>
+        </label>
+        <button onclick="doImport()"
+          style="border:1px solid #3b1f1f;"
+          class="px-4 py-1.5 text-xs font-bold uppercase tracking-wider text-red-900 hover:text-red-400 hover:border-red-800 transition-colors whitespace-nowrap">
+          ↑ UPLOAD &amp; SWAP
+        </button>
+      </div>
+      <div id="import-result" class="text-[10px] mt-2 text-gray-700"></div>
+    </div>
+  </div>
+
+  <!-- DB Vacuum -->
+  <div style="background:#111111;border:1px solid #272727;">
+    <div class="p-5">
+      <div class="text-[10px] text-gray-600 tracking-[0.3em] uppercase mb-1">DATABASE</div>
+      <h2 class="text-sm font-bold text-white mb-1">VACUUM</h2>
+      <p class="text-[10px] text-gray-700 mb-4">Compact the database file and reclaim unused space from deleted rows.</p>
+      <button onclick="doVacuum()"
+        style="border:1px solid #333;"
+        class="px-4 py-1.5 text-xs font-bold uppercase tracking-wider text-gray-500 hover:text-gray-200 hover:border-[#555] transition-colors">
+        ⟳ RUN VACUUM
+      </button>
+      <div id="vacuum-result" class="text-[10px] text-gray-700 mt-2"></div>
+    </div>
+  </div>
+
+  <!-- Force Poll -->
+  <div style="background:#111111;border:1px solid #272727;">
+    <div class="p-5">
+      <div class="text-[10px] text-gray-600 tracking-[0.3em] uppercase mb-1">SCHEDULER</div>
+      <h2 class="text-sm font-bold text-white mb-1">FORCE POLL</h2>
+      <p class="text-[10px] text-gray-700 mb-4">Trigger an immediate stats poll for all tracked players outside the normal schedule.</p>
+      <button onclick="doPoll()"
+        style="border:1px solid #333;"
+        class="px-4 py-1.5 text-xs font-bold uppercase tracking-wider text-gray-500 hover:text-gray-200 hover:border-[#555] transition-colors">
+        ► POLL NOW
+      </button>
+      <div id="poll-result" class="text-[10px] text-gray-700 mt-2"></div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+  function getToken() { return localStorage.getItem('utils_token') || ''; }
+
+  function saveToken() {
+    const t = document.getElementById('token-input').value.trim();
+    if (t) localStorage.setItem('utils_token', t);
+    else localStorage.removeItem('utils_token');
+    const el = document.getElementById('token-status');
+    el.textContent = t ? '● TOKEN SAVED' : '● TOKEN CLEARED';
+    el.style.color = t ? '#44ff88' : '#555';
+  }
+
+  function clearToken() {
+    localStorage.removeItem('utils_token');
+    document.getElementById('token-input').value = '';
+    const el = document.getElementById('token-status');
+    el.textContent = '● TOKEN CLEARED';
+    el.style.color = '#555';
+  }
+
+  function updateImportLabel(input) {
+    const name = input.files[0]?.name;
+    document.getElementById('import-filename').textContent = name ? name.toUpperCase() : 'CHOOSE FILE…';
+  }
+
+  window.addEventListener('DOMContentLoaded', () => {
+    const t = getToken();
+    if (t) {
+      document.getElementById('token-input').value = t;
+      const el = document.getElementById('token-status');
+      el.textContent = '● TOKEN LOADED';
+      el.style.color = '#44ff88';
+      checkHealth();
+    }
+  });
+
+  async function apiCall(path, method = 'GET', body = null) {
+    const token = getToken();
+    const url = path + '?token=' + encodeURIComponent(token);
+    const opts = { method };
+    if (body) opts.body = body;
+    return fetch(url, opts);
+  }
+
+  function ok(text) { return `<span style="color:#44ff88">${text}</span>`; }
+  function err(text) { return `<span style="color:#ef4444">${text}</span>`; }
+  function dim(text) { return `<span style="color:#555">${text}</span>`; }
+
+  async function handleApiError(res, resultId) {
+    if (res.status === 503) { document.getElementById(resultId).innerHTML = err('● UTILS_TOKEN not configured on server'); return true; }
+    if (res.status === 403) { document.getElementById(resultId).innerHTML = err('● Invalid token'); return true; }
+    if (!res.ok) {
+      let detail = res.status;
+      try { const j = await res.json(); detail = j.detail || detail; } catch {}
+      document.getElementById(resultId).innerHTML = err(`● Error ${detail}`);
+      return true;
+    }
+    return false;
+  }
+
+  function formatBytes(b) {
+    if (b >= 1048576) return (b / 1048576).toFixed(2) + ' MB';
+    if (b >= 1024) return (b / 1024).toFixed(1) + ' KB';
+    return b + ' B';
+  }
+
+  function formatUptime(s) {
+    const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
+    const parts = [];
+    if (h) parts.push(h + 'h');
+    if (m) parts.push(m + 'm');
+    parts.push(sec + 's');
+    return parts.join(' ');
+  }
+
+  function row(label, value) {
+    return `<div class="flex gap-3" style="line-height:1.7">` +
+      `<span style="color:#444;min-width:110px;display:inline-block">${label}</span>` +
+      `<span style="color:#ccc">${value}</span></div>`;
+  }
+
+  function divider() { return `<div style="border-top:1px solid #1e1e1e;margin:6px 0"></div>`; }
+
+  async function checkHealth() {
+    const btn = document.getElementById('health-btn');
+    const res_el = document.getElementById('health-result');
+    btn.textContent = 'CHECKING…';
+    btn.disabled = true;
+    res_el.innerHTML = dim('// RUNNING…');
+    try {
+      const res = await apiCall('/utils/health');
+      if (await handleApiError(res, 'health-result')) { btn.textContent = 'RUN CHECK'; btn.disabled = false; return; }
+      const d = await res.json();
+
+      const dot = v => v ? ok('●') : err('●');
+      const lines = [
+        row('STATUS',    `${dot(d.status === 'ok')} ${d.status.toUpperCase()}`),
+        row('UPTIME',    formatUptime(d.uptime_seconds)),
+        divider(),
+        row('DATABASE',  `${dot(d.db.reachable)} ${d.db.reachable ? 'REACHABLE' : 'UNREACHABLE'}`),
+        row('  PLAYERS',   String(d.db.players)),
+        row('  SNAPSHOTS', String(d.db.snapshots)),
+        divider(),
+        row('SCHEDULER', `${dot(d.scheduler.running)} ${d.scheduler.running ? 'RUNNING' : 'STOPPED'}`),
+        row('  JOBS',    String(d.scheduler.jobs)),
+        divider(),
+        row('DISCORD',   `${dot(d.discord_bot.ready)} ${d.discord_bot.ready ? 'READY' : 'NOT READY'}`),
+      ];
+      if (d.discord_bot.latency_ms != null) lines.push(row('  LATENCY', d.discord_bot.latency_ms + 'ms'));
+
+      res_el.innerHTML = `<div class="font-mono">${lines.join('')}</div>`;
+    } catch (e) {
+      res_el.innerHTML = err('● ' + e.message);
+    }
+    btn.textContent = 'RUN CHECK';
+    btn.disabled = false;
+  }
+
+  function doExport() {
+    const token = getToken();
+    const el = document.getElementById('export-result');
+    if (!token) { el.innerHTML = err('● No token set'); return; }
+    el.innerHTML = dim('● PREPARING DOWNLOAD…');
+    const a = document.createElement('a');
+    a.href = '/utils/db/export?token=' + encodeURIComponent(token);
+    a.click();
+    setTimeout(() => { el.innerHTML = ok('● DOWNLOAD STARTED'); }, 800);
+  }
+
+  async function doImport() {
+    const fileInput = document.getElementById('import-file');
+    const el = document.getElementById('import-result');
+    if (!fileInput.files[0]) { el.innerHTML = err('● No file selected'); return; }
+    if (!confirm('Replace the live database with the uploaded file? This cannot be undone.')) return;
+    const form = new FormData();
+    form.append('file', fileInput.files[0]);
+    el.innerHTML = dim('● UPLOADING AND VALIDATING…');
+    try {
+      const res = await apiCall('/utils/db/import', 'POST', form);
+      if (await handleApiError(res, 'import-result')) return;
+      const d = await res.json();
+      el.innerHTML = ok(`● IMPORTED → ${d.path}`);
+      fileInput.value = '';
+      document.getElementById('import-filename').textContent = 'CHOOSE FILE…';
+    } catch (e) {
+      el.innerHTML = err('● ' + e.message);
+    }
+  }
+
+  async function doVacuum() {
+    const el = document.getElementById('vacuum-result');
+    el.innerHTML = dim('● RUNNING VACUUM…');
+    try {
+      const res = await apiCall('/utils/db/vacuum', 'POST');
+      if (await handleApiError(res, 'vacuum-result')) return;
+      const d = await res.json();
+      const msg = d.saved_bytes > 0
+        ? ok(`● DONE — saved ${formatBytes(d.saved_bytes)} (${formatBytes(d.size_before_bytes)} → ${formatBytes(d.size_after_bytes)})`)
+        : dim(`● DONE — no space reclaimed (${formatBytes(d.size_after_bytes)})`);
+      el.innerHTML = msg;
+    } catch (e) {
+      el.innerHTML = err('● ' + e.message);
+    }
+  }
+
+  async function doPoll() {
+    const el = document.getElementById('poll-result');
+    el.innerHTML = dim('● POLLING ALL PLAYERS…');
+    try {
+      const res = await apiCall('/utils/poll', 'POST');
+      if (await handleApiError(res, 'poll-result')) return;
+      const d = await res.json();
+      el.innerHTML = ok('● ' + d.message.toUpperCase());
+    } catch (e) {
+      el.innerHTML = err('● ' + e.message);
+    }
+  }
+</script>
+
+{% endblock %}

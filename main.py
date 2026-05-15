@@ -14,6 +14,7 @@ from database import init_db, AsyncSessionLocal
 from discord_bot import start_bot, stop_bot
 from models import Player
 from routers.players import router
+from routers.utils import router as utils_router
 from scheduler import start_scheduler, stop_scheduler, poll_all_players
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s — %(message)s")
@@ -64,3 +65,4 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="OW Stats", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory="static"), name="static")
 app.include_router(router)
+app.include_router(utils_router)
