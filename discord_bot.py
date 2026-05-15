@@ -532,9 +532,14 @@ async def cmd_add_player(
 
 
 async def _add_ow_player(interaction: discord.Interaction, battletag: str) -> None:
-    from ow_client import fetch_player, PlayerNotFoundError, ProfilePrivateError, OverFastError
+    from ow_client import fetch_player, PlayerNotFoundError, ProfilePrivateError, OverFastError, InvalidBattletagError
     try:
         data = await fetch_player(battletag)
+    except InvalidBattletagError:
+        await interaction.followup.send(
+            f"`{battletag}` is not a valid battletag. Format should be `Username#1234`.", ephemeral=True
+        )
+        return
     except PlayerNotFoundError:
         await interaction.followup.send(
             f"Player `{battletag}` not found. Format should be `Username#1234`.", ephemeral=True
@@ -673,9 +678,14 @@ async def cmd_stats(interaction: discord.Interaction, player_id: str):
 
     # For OW, allow live lookup of untracked players
     if "#" in player_id:
-        from ow_client import fetch_player, PlayerNotFoundError, ProfilePrivateError, OverFastError
+        from ow_client import fetch_player, PlayerNotFoundError, ProfilePrivateError, OverFastError, InvalidBattletagError
         try:
             data = await fetch_player(player_id)
+        except InvalidBattletagError:
+            await interaction.followup.send(
+                f"`{player_id}` is not a valid battletag. Format: `Username#1234`.", ephemeral=True
+            )
+            return
         except PlayerNotFoundError:
             await interaction.followup.send(
                 f"Player `{player_id}` not found. Format: `Username#1234`.", ephemeral=True

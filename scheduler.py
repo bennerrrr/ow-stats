@@ -8,7 +8,7 @@ from sqlalchemy import select
 
 from database import AsyncSessionLocal
 from models import Player, StatSnapshot
-from ow_client import fetch_player as ow_fetch_player, ProfilePrivateError, PlayerNotFoundError as OWPlayerNotFoundError, OverFastError
+from ow_client import fetch_player as ow_fetch_player, ProfilePrivateError, PlayerNotFoundError as OWPlayerNotFoundError, OverFastError, InvalidBattletagError
 from hll_client import fetch_player as hll_fetch_player, PlayerNotFoundError as HLLPlayerNotFoundError, HLLClientError
 
 logger = logging.getLogger(__name__)
@@ -25,6 +25,9 @@ _pending_sessions: dict[str, dict] = {}
 async def _snapshot_ow(battletag: str) -> None:
     try:
         data = await ow_fetch_player(battletag)
+    except InvalidBattletagError:
+        logger.warning("Skipping %s — invalid battletag format", _slog(battletag))
+        return
     except ProfilePrivateError:
         logger.warning("Skipping %s — profile is private", _slog(battletag))
         return

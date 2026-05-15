@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from database import get_db
 from models import Player, StatSnapshot
-from ow_client import fetch_player as ow_fetch_player, ProfilePrivateError, PlayerNotFoundError as OWPlayerNotFoundError, OverFastError, HERO_ROLES
+from ow_client import fetch_player as ow_fetch_player, ProfilePrivateError, PlayerNotFoundError as OWPlayerNotFoundError, OverFastError, InvalidBattletagError, HERO_ROLES
 from scheduler import snapshot_player
 
 router = APIRouter()
@@ -433,6 +433,8 @@ async def add_player(
 async def _add_ow_player_web(battletag: str, db: AsyncSession):
     try:
         data = await ow_fetch_player(battletag)
+    except InvalidBattletagError:
+        return RedirectResponse("/overwatch?error=invalid_battletag", status_code=303)
     except OWPlayerNotFoundError:
         return RedirectResponse("/overwatch?error=not_found", status_code=303)
     except ProfilePrivateError:
@@ -513,4 +515,4 @@ async def refresh_player(battletag: str, request: Request, db: AsyncSession = De
             "partials/player_live.html", {"request": request, **ctx}
         )
 
-    return RedirectResponse(f"/players/{quote(battletag, safe='')}", status_code=303)
+    return RedirectResponse(f"/players/{quote(player.battletag, safe='')}", status_code=303)
