@@ -21,7 +21,8 @@ main.py              — App entry point, lifespan (init_db → seed_players →
 models.py            — SQLAlchemy ORM: Player, StatSnapshot, DiscordChannel
 database.py          — Engine, AsyncSessionLocal, get_db(), init_db() (additive ALTER migrations)
 scheduler.py         — APScheduler polling loop, snapshot functions, Discord alert dispatch
-ow_client.py         — OverFast API client, 1h cache, returns PlayerData dataclass
+ow_client.py         — OverFast API client, 1h cache, returns PlayerData dataclass;
+                       _battletag_to_url() URL-encodes the tag before embedding in paths
 hll_client.py        — Steam Web API client, 30m cache, returns HLLPlayerData dataclass
 discord_bot.py       — discord.py bot, slash commands, embed builders, notification queue
 routers/players.py   — All HTTP routes, snapshot-to-JSON helpers, session/trend computation
@@ -138,7 +139,7 @@ The JS in `player.html` posts with the XHR header, swaps `#live-stats` innerHTML
 
 ## Adding a new game
 
-1. Add a client module (`newgame_client.py`) returning a typed dataclass, with a `_cache` dict and `invalidate_cache()`
+1. Add a client module (`newgame_client.py`) returning a typed dataclass, with a `_cache` dict and `invalidate_cache()`. URL-encode any user-provided value used in API paths (`urllib.parse.quote`). Add a `_slog()` helper (see `scheduler.py`) and wrap player IDs in all logger calls.
 2. Add `game_data` fields to `StatSnapshot` or add new columns via `init_db()` ALTER block
 3. Add `_snapshot_newgame()` to `scheduler.py` following the change-gate pattern
 4. Wire into `snapshot_player()` dispatch and `_pending_sessions` tracking
@@ -159,3 +160,5 @@ The JS in `player.html` posts with the XHR header, swaps `#live-stats` innerHTML
 - **Non-standard OW battletags** — some players are added via internal hash/UUID (no `#` in the string). Templates detect this with `'#' in player.battletag` and hide the raw ID from display; the API still uses it as-is for lookups.
 - **OW role stats use `raw_stats.roles`, not `top_heroes` aggregation** — `raw_stats.roles.{tank|damage|support}` has exact game counts, W/L, KDA, deaths, damage per role. The `role_stats` context variable (from `_compute_role_stats`) is still computed but not used for display; `raw_stats.roles` is read directly in the template.
 - **`_build_player_context` (OW2) returns `rank_history` + `rank_history_json`** — `rank_history` is newest-first list of dicts (one per distinct rank state); `rank_history_json` is the chronological JSON for the rank chart. Both are empty/`"[]"` when no snapshots exist.
+- **User-provided values in log calls must be sanitized** — use `_slog(value)` (strips `\n`/`\r`) when logging battletags or Steam IDs to prevent log injection. Defined locally in `scheduler.py`, `discord_bot.py`, and `hll_client.py`.
+- **Battletag-derived URL paths must be encoded** — `ow_client._battletag_to_url()` uses `urllib.parse.quote` so path segments can't escape the `/players/` prefix. Follow the same pattern in any new client module.
