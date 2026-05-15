@@ -5,6 +5,7 @@ from contextlib import asynccontextmanager
 
 from dotenv import load_dotenv
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy import select
 
 load_dotenv()
@@ -61,4 +62,5 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="OW Stats", lifespan=lifespan)
+app.mount("/static", StaticFiles(directory="static"), name="static")
 app.include_router(router)
