@@ -1,45 +1,234 @@
 {% extends "base.html" %}
-{% block title %}{{ player.display_name or player.battletag }} — Game Stats{% endblock %}
+{% block title %}{{ player.display_name or player.battletag }} — STATS.CMD{% endblock %}
 
 {% block content %}
 
-<a href="/" class="text-sm text-gray-500 hover:text-gray-300 transition-colors mb-6 inline-block">&larr; All players</a>
+<!-- Back link -->
+<a href="{% if player.game == 'hell_let_loose' %}/hll{% else %}/overwatch{% endif %}"
+  class="text-[10px] text-gray-600 hover:text-gray-400 transition-colors mb-5 inline-block uppercase tracking-widest">
+  ◄ {{ 'HELL LET LOOSE' if player.game == 'hell_let_loose' else 'OVERWATCH 2' }}
+</a>
 
-<!-- Player header -->
-<div class="flex items-center gap-5 mb-8">
-  {% if player.avatar_url %}
-  <img src="{{ player.avatar_url }}" alt="{{ player.display_name }}"
-    class="w-20 h-20 rounded-full border-2 {% if player.game == 'hell_let_loose' %}border-hll-indigo{% else %}border-ow-orange{% endif %} object-cover" />
-  {% else %}
-  <div class="w-20 h-20 rounded-full bg-ow-border flex items-center justify-center text-gray-400 font-bold text-3xl">
-    {{ (player.display_name or player.battletag)[0].upper() }}
-  </div>
-  {% endif %}
-  <div>
-    <div class="flex items-center gap-3 mb-1">
-      <h1 class="text-3xl font-bold text-white">{{ player.display_name or player.battletag.split('#')[0] }}</h1>
-      {% if player.game == 'hell_let_loose' %}
-      <span class="text-sm px-2 py-0.5 rounded bg-hll-indigo/20 text-indigo-300 border border-indigo-800">HLL</span>
-      {% else %}
-      <span class="text-sm px-2 py-0.5 rounded bg-ow-orange/20 text-yellow-300 border border-yellow-800">OW2</span>
+<!-- Top row: command panel + rank chart side by side -->
+{% set accent = '#8FBC4A' if player.game == 'hell_let_loose' else '#F99E1A' %}
+{% set _std_tag = '#' in player.battletag %}
+{% set _show_rank_chart = player.game != 'hell_let_loose' and rank_history is defined and rank_history | length > 1 %}
+{% if _show_rank_chart %}
+<script type="application/json" id="rank-history-data">{{ rank_history_json | safe }}</script>
+{% endif %}
+<div class="flex gap-3 mb-6 items-stretch flex-col sm:flex-row">
+
+<!-- Player command panel -->
+<div style="background:#111111;border:1px solid #272727;border-left:3px solid {{ accent }};" class="flex-1 min-w-0 p-5">
+
+  <!-- Top row: avatar + name + status + refresh -->
+  <div class="flex items-center gap-4 mb-5">
+    {% if player.avatar_url %}
+    <img src="{{ player.avatar_url }}" alt="{{ player.display_name }}"
+      class="w-14 h-14 object-cover shrink-0" style="border:1px solid #333;" />
+    {% else %}
+    <div class="w-14 h-14 flex items-center justify-center font-bold text-2xl shrink-0"
+      style="background:#1a1a1a;border:1px solid #333;color:{{ accent }};">
+      {{ (player.display_name or player.battletag)[0].upper() }}
+    </div>
+    {% endif %}
+    <div class="flex-1 min-w-0">
+      <div class="text-[10px] uppercase tracking-widest mb-0.5" style="color:{{ accent }};opacity:0.7;">
+        // {% if player.game == 'hell_let_loose' %}HLL OPERATOR{% else %}OW2 OPERATOR{% endif %}
+      </div>
+      <h1 class="text-xl font-bold text-white tracking-wide truncate uppercase">
+        {{ player.display_name or player.battletag.split('#')[0] }}
+      </h1>
+      {% if _std_tag %}
+      <p class="text-xs text-gray-600">{{ player.battletag }}</p>
       {% endif %}
     </div>
-    <p class="text-gray-500">{{ player.battletag }}</p>
+    <!-- Live status -->
+    {% if snapshots %}
+    {% set freshness = snapshots[0].fetched_at | timeago %}
+    <div class="flex items-center gap-2 shrink-0">
+      {% if freshness == 'LIVE' %}
+      <span class="w-2 h-2 rounded-full bg-[#44ff88] status-live"></span>
+      <span class="text-xs text-[#44ff88] uppercase tracking-wider">LIVE</span>
+      {% else %}
+      <span class="w-2 h-2 rounded-full bg-gray-700"></span>
+      <span class="text-xs text-gray-600 uppercase tracking-wider">{{ freshness }}</span>
+      {% endif %}
+    </div>
+    {% endif %}
+    <button id="refresh-btn"
+      style="background:#0a0a0a;border:1px solid #333;"
+      class="shrink-0 hover:border-ow-orange text-xs text-gray-500 hover:text-ow-orange px-4 py-2 uppercase tracking-wider transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
+      <span id="refresh-label">↻ REFRESH</span>
+    </button>
   </div>
-  <button id="refresh-btn"
-    class="ml-auto bg-ow-card border border-ow-border hover:border-ow-orange text-sm text-gray-300 px-4 py-2 rounded-lg transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed">
-    <span id="refresh-label">Refresh stats</span>
-  </button>
+
+  <!-- Stats command row (only if we have snapshots) -->
+  {% if snapshots %}
+  {% set latest = snapshots[0] %}
+
+  {% if player.game != 'hell_let_loose' %}
+  <!-- OW2 command panel: Rank / WR / KDA / Trend -->
+  <div class="grid grid-cols-2 sm:grid-cols-4 gap-4" style="border-top:1px solid #1e1e1e;padding-top:16px;">
+
+    <div>
+      <div class="text-[10px] text-gray-600 uppercase tracking-widest mb-2">🏆 RANK</div>
+      <div class="space-y-1">
+        {% set has_rank = latest.rank_tank or latest.rank_damage or latest.rank_support or latest.rank_open %}
+        {% for role_label, rank in [('Tank', latest.rank_tank), ('Damage', latest.rank_damage), ('Support', latest.rank_support), ('Open Queue', latest.rank_open)] %}
+        {% if rank %}
+        {% set tier = rank.split(' ')[0].lower() %}
+        <div class="space-y-0"
+          style="color:{% if tier == 'champion' %}#f472b6{% elif tier == 'grandmaster' %}#fb923c{% elif tier == 'master' %}#c084fc{% elif tier == 'diamond' %}#60a5fa{% elif tier == 'platinum' %}#22d3ee{% elif tier == 'gold' %}#facc15{% elif tier == 'silver' %}#9ca3af{% elif tier == 'bronze' %}#fbbf24{% else %}#aaa{% endif %};">
+          <span class="text-[9px] text-gray-600 uppercase tracking-wider block">{{ role_label }}</span>
+          <span class="text-xs font-bold">{{ rank }}</span>
+        </div>
+        {% endif %}
+        {% endfor %}
+        {% if not has_rank %}
+        <span class="text-gray-600 text-xs">UNRANKED</span>
+        {% endif %}
+      </div>
+    </div>
+
+    <div>
+      <div class="text-[10px] text-gray-600 uppercase tracking-widest mb-2">📊 WIN RATE</div>
+      {% if latest.win_rate is not none %}
+      {% set wr = (latest.win_rate * 100) | round(1) %}
+      <div class="text-2xl font-bold {% if wr >= 55 %}text-[#44ff88] glow-green{% elif wr < 45 %}text-red-400 glow-red{% else %}text-ow-orange glow-orange{% endif %}">
+        {{ "%.1f"|format(wr) }}%
+      </div>
+      <div class="stat-bar max-w-[60px] mt-2">
+        <div class="stat-bar-fill {% if wr >= 55 %}bg-[#44ff88]{% elif wr < 45 %}bg-red-400{% else %}bg-ow-orange{% endif %}"
+          style="width:{{ wr | int }}%"></div>
+      </div>
+      {% else %}
+      <div class="text-2xl font-bold text-gray-700">—</div>
+      {% endif %}
+    </div>
+
+    <div>
+      <div class="text-[10px] text-gray-600 uppercase tracking-widest mb-2">⚡ KDA</div>
+      {% if latest.kda is not none %}
+      <div class="text-2xl font-bold {% if latest.kda >= 3.0 %}text-ow-cyan glow-cyan{% elif latest.kda < 2.0 %}text-red-400{% else %}text-gray-200{% endif %}">
+        {{ "%.2f"|format(latest.kda) }}
+      </div>
+      {% else %}
+      <div class="text-2xl font-bold text-gray-700">—</div>
+      {% endif %}
+    </div>
+
+    <div>
+      <div class="text-[10px] text-gray-600 uppercase tracking-widest mb-2">📈 {{ trend.period if trend else '7' }}D TREND</div>
+      {% if trend %}
+      <div class="space-y-1">
+        {% if trend.wr_delta is not none and trend.wr_delta != 0 %}
+        <div class="text-sm font-bold {% if trend.wr_delta > 0 %}text-[#44ff88]{% else %}text-red-400{% endif %}">
+          {{ '↑' if trend.wr_delta > 0 else '↓' }} {% if trend.wr_delta > 0 %}+{% endif %}{{ trend.wr_delta }}% WR
+        </div>
+        {% endif %}
+        {% if trend.kda_delta is not none and trend.kda_delta != 0 %}
+        <div class="text-sm font-bold {% if trend.kda_delta > 0 %}text-[#44ff88]{% else %}text-red-400{% endif %}">
+          {{ '↑' if trend.kda_delta > 0 else '↓' }} {% if trend.kda_delta > 0 %}+{% endif %}{{ trend.kda_delta }} KDA
+        </div>
+        {% endif %}
+        {% if trend.games_delta is not none and trend.games_delta > 0 %}
+        <div class="text-xs text-gray-600">+{{ trend.games_delta }} games</div>
+        {% endif %}
+        {% if (trend.wr_delta is none or trend.wr_delta == 0) and (trend.kda_delta is none or trend.kda_delta == 0) %}
+        <div class="text-xs text-gray-700">── NO CHANGE</div>
+        {% endif %}
+      </div>
+      {% else %}
+      <div class="text-xs text-gray-700">── NO DATA</div>
+      {% endif %}
+    </div>
+
+  </div>
+
+  {% else %}
+  <!-- HLL command panel: Kills / K/hr / Hours / Trend -->
+  {% set gd = latest.game_data or {} %}
+  {% set kills = gd.get('kills') %}
+  {% set pt = gd.get('playtime_forever') %}
+  {% set kph = ((kills / (pt / 60)) | round(1)) if (kills and pt and pt > 0) else none %}
+  {% set hs = gd.get('headshots') %}
+  {% set hs_pct = ((hs / kills * 100) | round(1)) if (hs is not none and kills) else none %}
+
+  <div class="grid grid-cols-2 sm:grid-cols-4 gap-4" style="border-top:1px solid #1e1e1e;padding-top:16px;">
+
+    <div>
+      <div class="text-[10px] text-gray-600 uppercase tracking-widest mb-2">💀 KILLS</div>
+      <div class="text-2xl font-bold text-hll-bright glow-green">
+        {% if kills is not none %}{{ "{:,}".format(kills) }}{% else %}—{% endif %}
+      </div>
+      {% if hs_pct is not none %}
+      <div class="text-xs text-gray-600 mt-1">
+        HS: <span class="{% if hs_pct >= 25 %}text-[#44ff88]{% elif hs_pct < 15 %}text-red-400{% else %}text-gray-400{% endif %}">{{ hs_pct }}%</span>
+      </div>
+      {% endif %}
+    </div>
+
+    <div>
+      <div class="text-[10px] text-gray-600 uppercase tracking-widest mb-2">⚡ K/HR</div>
+      <div class="text-2xl font-bold {% if kph is not none and kph >= 20 %}text-ow-cyan glow-cyan{% elif kph is not none %}text-gray-200{% else %}text-gray-700{% endif %}">
+        {% if kph is not none %}{{ kph }}{% else %}—{% endif %}
+      </div>
+    </div>
+
+    <div>
+      <div class="text-[10px] text-gray-600 uppercase tracking-widest mb-2">⏱ HOURS</div>
+      <div class="text-2xl font-bold text-gray-200">
+        {% if pt is not none %}{{ pt // 60 }}h{% else %}—{% endif %}
+      </div>
+    </div>
+
+    <div>
+      <div class="text-[10px] text-gray-600 uppercase tracking-widest mb-2">📈 {{ trend.period if trend else '7' }}D TREND</div>
+      {% if trend %}
+      <div class="space-y-1">
+        {% if trend.kills_delta is not none and trend.kills_delta > 0 %}
+        <div class="text-sm font-bold text-[#44ff88]">↑ +{{ "{:,}".format(trend.kills_delta) }} kills</div>
+        {% endif %}
+        {% if trend.pt_delta is not none and trend.pt_delta > 0 %}
+        <div class="text-sm text-hll-bright">+{{ trend.pt_delta // 60 }}h {{ trend.pt_delta % 60 }}m</div>
+        {% endif %}
+        {% if (trend.kills_delta is none or trend.kills_delta <= 0) and (trend.pt_delta is none or trend.pt_delta <= 0) %}
+        <div class="text-xs text-gray-700">── NO CHANGE</div>
+        {% endif %}
+      </div>
+      {% else %}
+      <div class="text-xs text-gray-700">── NO DATA</div>
+      {% endif %}
+    </div>
+
+  </div>
+  {% endif %}
+
+  {% else %}
+  <p class="text-xs text-gray-700 uppercase tracking-wider" style="border-top:1px solid #1e1e1e;padding-top:14px;">
+    AWAITING FIRST SNAPSHOT
+  </p>
+  {% endif %}
+
+</div><!-- end command panel -->
+
+<!-- Rank chart panel (OW2 only) -->
+{% if _show_rank_chart %}
+<div style="background:#0d0d0d;border:1px solid #1c1c1c;border-radius:16px;width:260px;" class="shrink-0 p-4 flex flex-col gap-2">
+  <p class="text-[10px] text-gray-600 uppercase tracking-widest shrink-0">📊 Rank Progression</p>
+  <div class="flex-1" style="position:relative;min-height:130px;">
+    <canvas id="rank-chart" style="position:absolute;inset:0;width:100%;height:100%;"></canvas>
+  </div>
 </div>
+{% endif %}
 
-{% if not snapshots %}
-<p class="text-gray-500 italic">No snapshots yet — stats will appear after the first poll.</p>
-{% else %}
+</div><!-- end flex wrapper -->
 
+{% if snapshots %}
 <div id="live-stats" class="transition-opacity duration-200">
   {% include "partials/player_live.html" %}
 </div>
-
 {% endif %}
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
@@ -48,8 +237,6 @@
   const PLAYER_GAME = '{{ player.game }}';
   let statsChart = null;
   let allSnapshotData = [];
-
-  // ── Chart ────────────────────────────────────────────────────────────────
 
   function getSnapshotData() {
     const el = document.getElementById('snapshot-data');
@@ -64,15 +251,12 @@
 
   function setActiveFilter(days) {
     const key = days == null ? '' : String(days);
+    const isHLL = PLAYER_GAME === 'hell_let_loose';
+    const accentColor = isHLL ? '#8FBC4A' : '#F99E1A';
     document.querySelectorAll('[data-days]').forEach(btn => {
       const active = btn.dataset.days === key;
-      const isHLL = PLAYER_GAME === 'hell_let_loose';
-      const accentBorder = isHLL ? 'border-hll-indigo' : 'border-ow-orange';
-      const accentText   = isHLL ? 'text-hll-indigo'   : 'text-ow-orange';
-      btn.classList.toggle(accentBorder, active);
-      btn.classList.toggle(accentText, active);
-      btn.classList.toggle('border-transparent', !active);
-      btn.classList.toggle('text-gray-500', !active);
+      btn.style.borderColor  = active ? accentColor : 'transparent';
+      btn.style.color        = active ? accentColor : '#555';
     });
   }
 
@@ -90,10 +274,125 @@
     setActiveFilter(days);
   }
 
+  // ── Rank progression chart ───────────────────────────────────────────────
+
+  function initRankChart() {
+    const el = document.getElementById('rank-history-data');
+    if (!el) return;
+    const data = JSON.parse(el.textContent);
+    if (!data || data.length < 2) return;
+    const canvas = document.getElementById('rank-chart');
+    if (!canvas) return;
+
+    const TIERS = {bronze:0,silver:5,gold:10,platinum:15,diamond:20,master:25,grandmaster:30,champion:35};
+    // Color for each tier boundary label
+    const TIER_COLORS = {5:'#d97706',10:'#8b8b8b',15:'#ca8a04',20:'#0891b2',25:'#3b82f6',30:'#7c3aed',35:'#ea580c',40:'#db2777'};
+
+    function toNum(r) {
+      if (!r) return null;
+      const p = r.toLowerCase().split(' ');
+      const base = TIERS[p[0]];
+      if (base === undefined) return null;
+      const div = parseInt(p[1]);
+      return isNaN(div) ? base + 5 : base + (6 - div);
+    }
+    function toLabel(n) {
+      if (n === null || n === undefined) return null;
+      const t = ['Bronze','Silver','Gold','Platinum','Diamond','Master','Grandmaster','Champion'];
+      const ti = Math.floor((n-1)/5);
+      return ti >= 7 ? 'Champion' : `${t[ti]} ${5-((n-1)%5)}`;
+    }
+
+    const roles = [
+      {key:'tank',   label:'Tank',   color:'#60a5fa', fill:'rgba(96,165,250,0.07)'},
+      {key:'damage', label:'Damage', color:'#f87171', fill:'rgba(248,113,113,0.07)'},
+      {key:'support',label:'Support',color:'#4ade80', fill:'rgba(74,222,128,0.07)'},
+      {key:'open',   label:'Open Q', color:'#facc15', fill:'rgba(250,204,21,0.07)'},
+    ];
+
+    const active = roles.filter(r => data.some(d => d[r.key]));
+    if (!active.length) return;
+
+    const datasets = active.map(r => ({
+      label: r.label,
+      data: data.map(d => toNum(d[r.key])),
+      borderColor: r.color,
+      backgroundColor: r.fill,
+      fill: 'origin',
+      stepped: 'before',
+      pointRadius: 4,
+      pointHoverRadius: 6,
+      pointBackgroundColor: r.color,
+      borderWidth: 2,
+      spanGaps: false,
+      tension: 0,
+    }));
+
+    const allNums = datasets.flatMap(d => d.data).filter(v => v !== null);
+    const dataMin = Math.min(...allNums);
+    const dataMax = Math.max(...allNums);
+    const minY = Math.max(0,  Math.floor((dataMin - 1) / 5) * 5);
+    const maxY = Math.min(40, Math.floor((dataMax - 1) / 5) * 5 + 10);
+
+    new Chart(canvas, {
+      type: 'line',
+      data: { labels: data.map(d => d.date), datasets },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        layout: { padding: { left: 2, right: 6, top: 4, bottom: 0 } },
+        interaction: { mode: 'index', intersect: false },
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            backgroundColor: '#0d0d0d',
+            borderColor: '#2a2a2a',
+            borderWidth: 1,
+            cornerRadius: 8,
+            titleColor: '#ccc',
+            bodyColor: '#666',
+            padding: 8,
+            titleFont: { family: 'monospace', size: 10 },
+            bodyFont:  { family: 'monospace', size: 10 },
+            callbacks: {
+              label: ctx => {
+                const n = ctx.parsed.y;
+                return n == null ? null : ` ${ctx.dataset.label}: ${toLabel(n)}`;
+              }
+            }
+          }
+        },
+        scales: {
+          x: {
+            ticks: { color: '#383838', font: { family: 'monospace', size: 9 }, maxRotation: 0, maxTicksLimit: 6 },
+            grid:  { color: '#181818' },
+            border: { color: '#1e1e1e' }
+          },
+          y: {
+            min: minY, max: maxY,
+            ticks: {
+              stepSize: 5,
+              font: { family: 'monospace', size: 9 },
+              color: ctx => TIER_COLORS[ctx.tick.value] || '#383838',
+              callback: v => {
+                const n = {5:'Bronze',10:'Silver',15:'Gold',20:'Plat',25:'Diamond',30:'Master',35:'GM',40:'Champ'};
+                return n[v] || '';
+              }
+            },
+            grid: {
+              color: ctx => ctx.tick.value % 5 === 0 ? '#232323' : '#181818',
+            },
+            border: { color: '#1e1e1e' }
+          }
+        }
+      }
+    });
+  }
+
+  // ── Snapshot chart ───────────────────────────────────────────────────────
+
   function initChart() {
     allSnapshotData = getSnapshotData();
     if (allSnapshotData.length < 2) return;
-    // Default to 30d if we have more than 30 days of data, otherwise show all
     const oldest = new Date(allSnapshotData[0].ts);
     const spanDays = (Date.now() - oldest.getTime()) / 86400000;
     filterChart(spanDays > 30 ? 30 : null);
@@ -103,226 +402,87 @@
     const hasComp = data.some(d => d.comp_win_rate != null);
     const hasQP   = data.some(d => d.qp_win_rate != null);
     const datasets = [
-      {
-        label: 'Win Rate %',
-        data: data.map(d => d.win_rate),
-        borderColor: '#F99E1A',
-        backgroundColor: 'rgba(249,158,26,0.08)',
-        fill: true,
-        yAxisID: 'yWR',
-        tension: 0.3,
-        pointRadius: 4,
-        pointHoverRadius: 6,
-        spanGaps: true,
-      },
-      {
-        label: 'KDA',
-        data: data.map(d => d.kda),
-        borderColor: '#4A90D9',
-        backgroundColor: 'rgba(74,144,217,0.06)',
-        fill: false,
-        yAxisID: 'yKDA',
-        tension: 0.3,
-        pointRadius: 4,
-        pointHoverRadius: 6,
-        spanGaps: true,
-      },
+      { label: 'Win Rate %', data: data.map(d => d.win_rate), borderColor: '#F99E1A', backgroundColor: 'rgba(249,158,26,0.06)', fill: true, yAxisID: 'yWR', tension: 0.3, pointRadius: 3, pointHoverRadius: 5, spanGaps: true },
+      { label: 'KDA', data: data.map(d => d.kda), borderColor: '#00D4FF', backgroundColor: 'rgba(0,212,255,0.04)', fill: false, yAxisID: 'yKDA', tension: 0.3, pointRadius: 3, pointHoverRadius: 5, spanGaps: true },
     ];
-    if (hasComp) datasets.push({
-      label: 'Comp Win Rate %',
-      data: data.map(d => d.comp_win_rate),
-      borderColor: '#E57373',
-      backgroundColor: 'transparent',
-      fill: false,
-      yAxisID: 'yWR',
-      tension: 0.3,
-      pointRadius: 3,
-      pointHoverRadius: 5,
-      borderDash: [5, 3],
-      spanGaps: true,
-    });
-    if (hasQP) datasets.push({
-      label: 'QP Win Rate %',
-      data: data.map(d => d.qp_win_rate),
-      borderColor: '#81C784',
-      backgroundColor: 'transparent',
-      fill: false,
-      yAxisID: 'yWR',
-      tension: 0.3,
-      pointRadius: 3,
-      pointHoverRadius: 5,
-      borderDash: [5, 3],
-      spanGaps: true,
-    });
-    statsChart = new Chart(canvas, {
-      type: 'line',
-      data: { labels: data.map(d => d.date), datasets },
-      options: _chartOptions({
-        yWR: { position: 'left',  color: '#F99E1A', callback: v => v + '%' },
-        yKDA: { position: 'right', color: '#4A90D9', callback: null },
-      }, (ctx) => {
-        const l = ctx.dataset.label;
-        const v = ctx.parsed.y;
-        if (l === 'KDA') return ` KDA: ${v}`;
-        return ` ${l}: ${v}%`;
-      }),
-    });
+    if (hasComp) datasets.push({ label: 'Comp WR %', data: data.map(d => d.comp_win_rate), borderColor: '#E57373', backgroundColor: 'transparent', fill: false, yAxisID: 'yWR', tension: 0.3, pointRadius: 2, pointHoverRadius: 4, borderDash: [5, 3], spanGaps: true });
+    if (hasQP)   datasets.push({ label: 'QP WR %',   data: data.map(d => d.qp_win_rate),   borderColor: '#44ff88', backgroundColor: 'transparent', fill: false, yAxisID: 'yWR', tension: 0.3, pointRadius: 2, pointHoverRadius: 4, borderDash: [5, 3], spanGaps: true });
+    statsChart = new Chart(canvas, { type: 'line', data: { labels: data.map(d => d.date), datasets }, options: _chartOptions({ yWR: { position: 'left', color: '#F99E1A', callback: v => v + '%' }, yKDA: { position: 'right', color: '#00D4FF', callback: null } }, ctx => { const l = ctx.dataset.label, v = ctx.parsed.y; return l === 'KDA' ? ` KDA: ${v}` : ` ${l}: ${v}%`; }) });
   }
 
   function initHLLChart(canvas, data) {
-    const hasXP       = data.some(d => d.xp != null);
+    const hasXP        = data.some(d => d.xp != null);
     const hasHeadshots = data.some(d => d.headshots != null);
     const datasets = [
-      {
-        label: 'Career Kills',
-        data: data.map(d => d.kills),
-        borderColor: '#5C6BC0',
-        backgroundColor: 'rgba(92,107,192,0.1)',
-        fill: true,
-        yAxisID: 'yKills',
-        tension: 0.3,
-        pointRadius: 4,
-        pointHoverRadius: 6,
-        spanGaps: true,
-      },
+      { label: 'Career Kills', data: data.map(d => d.kills), borderColor: '#8FBC4A', backgroundColor: 'rgba(143,188,74,0.06)', fill: true, yAxisID: 'yKills', tension: 0.3, pointRadius: 3, pointHoverRadius: 5, spanGaps: true },
     ];
-    if (hasXP) datasets.push({
-      label: 'Total XP',
-      data: data.map(d => d.xp),
-      borderColor: '#78909C',
-      backgroundColor: 'transparent',
-      fill: false,
-      yAxisID: 'yXP',
-      tension: 0.3,
-      pointRadius: 3,
-      pointHoverRadius: 5,
-      borderDash: [4, 3],
-      spanGaps: true,
-    });
-    if (hasHeadshots) datasets.push({
-      label: 'Headshots',
-      data: data.map(d => d.headshots),
-      borderColor: '#FFB74D',
-      backgroundColor: 'transparent',
-      fill: false,
-      yAxisID: 'yKills',
-      tension: 0.3,
-      pointRadius: 3,
-      pointHoverRadius: 5,
-      borderDash: [2, 3],
-      spanGaps: true,
-    });
-    const axes = { yKills: { position: 'left', color: '#5C6BC0', callback: v => v >= 1000 ? (v/1000).toFixed(1)+'k' : v } };
-    if (hasXP) axes.yXP = { position: 'right', color: '#78909C', callback: v => v >= 1000000 ? (v/1000000).toFixed(1)+'M' : v >= 1000 ? (v/1000).toFixed(0)+'k' : v };
-    statsChart = new Chart(canvas, {
-      type: 'line',
-      data: { labels: data.map(d => d.date), datasets },
-      options: _chartOptions(axes, ctx => {
-        const l = ctx.dataset.label;
-        const v = ctx.parsed.y?.toLocaleString();
-        if (l === 'Career Kills') return ` Kills: ${v}`;
-        if (l === 'Headshots') return ` Headshots: ${v}`;
-        return ` XP: ${v}`;
-      }),
-    });
+    if (hasXP) datasets.push({ label: 'Total XP', data: data.map(d => d.xp), borderColor: '#555', backgroundColor: 'transparent', fill: false, yAxisID: 'yXP', tension: 0.3, pointRadius: 2, pointHoverRadius: 4, borderDash: [4, 3], spanGaps: true });
+    if (hasHeadshots) datasets.push({ label: 'Headshots', data: data.map(d => d.headshots), borderColor: '#FFB74D', backgroundColor: 'transparent', fill: false, yAxisID: 'yKills', tension: 0.3, pointRadius: 2, pointHoverRadius: 4, borderDash: [2, 3], spanGaps: true });
+    const axes = { yKills: { position: 'left', color: '#8FBC4A', callback: v => v >= 1000 ? (v/1000).toFixed(1)+'k' : v } };
+    if (hasXP) axes.yXP = { position: 'right', color: '#555', callback: v => v >= 1000000 ? (v/1000000).toFixed(1)+'M' : v >= 1000 ? (v/1000).toFixed(0)+'k' : v };
+    statsChart = new Chart(canvas, { type: 'line', data: { labels: data.map(d => d.date), datasets }, options: _chartOptions(axes, ctx => { const l = ctx.dataset.label, v = ctx.parsed.y?.toLocaleString(); if (l === 'Career Kills') return ` Kills: ${v}`; if (l === 'Headshots') return ` Headshots: ${v}`; return ` XP: ${v}`; }) });
   }
 
   function _chartOptions(axes, tooltipLabel) {
-    const scales = { x: { ticks: { color: '#6B7280', maxRotation: 45, font: { size: 11 } }, grid: { color: 'rgba(15,52,96,0.6)' } } };
+    const scales = { x: { ticks: { color: '#444', maxRotation: 45, font: { size: 10, family: 'monospace' } }, grid: { color: '#1a1a1a' } } };
     for (const [id, cfg] of Object.entries(axes)) {
-      scales[id] = {
-        type: 'linear',
-        position: cfg.position,
-        ticks: { color: cfg.color, ...(cfg.callback ? { callback: cfg.callback } : {}) },
-        grid: cfg.position === 'left' ? { color: 'rgba(15,52,96,0.4)' } : { drawOnChartArea: false },
-      };
+      scales[id] = { type: 'linear', position: cfg.position, ticks: { color: cfg.color, font: { family: 'monospace', size: 10 }, ...(cfg.callback ? { callback: cfg.callback } : {}) }, grid: cfg.position === 'left' ? { color: '#1a1a1a' } : { drawOnChartArea: false } };
     }
     return {
-      responsive: true,
-      maintainAspectRatio: false,
+      responsive: true, maintainAspectRatio: false,
       interaction: { mode: 'index', intersect: false },
       plugins: {
-        legend: { labels: { color: '#9CA3AF', usePointStyle: true, pointStyleWidth: 10 } },
-        tooltip: {
-          backgroundColor: '#16213E',
-          borderColor: '#0F3460',
-          borderWidth: 1,
-          titleColor: '#E0E0E0',
-          bodyColor: '#9CA3AF',
-          padding: 10,
-          callbacks: { label: tooltipLabel }
-        }
+        legend: { labels: { color: '#555', usePointStyle: true, pointStyleWidth: 8, font: { family: 'monospace', size: 10 } } },
+        tooltip: { backgroundColor: '#111', borderColor: '#272727', borderWidth: 1, titleColor: '#d4d4d4', bodyColor: '#888', padding: 10, titleFont: { family: 'monospace' }, bodyFont: { family: 'monospace' }, callbacks: { label: tooltipLabel } }
       },
       scales,
     };
   }
-
-  // ── Tab switching (OW only) ───────────────────────────────────────────────
 
   function switchTab(key) {
     ['all', 'competitive', 'quickplay'].forEach(k => {
       document.getElementById('panel-' + k)?.classList.toggle('hidden', k !== key);
       const btn = document.getElementById('tab-' + k);
       if (!btn) return;
-      if (k === key) {
-        btn.classList.add('border-ow-orange', 'text-ow-orange');
-        btn.classList.remove('border-transparent', 'text-gray-400', 'hover:text-gray-200');
-      } else {
-        btn.classList.remove('border-ow-orange', 'text-ow-orange');
-        btn.classList.add('border-transparent', 'text-gray-400', 'hover:text-gray-200');
-      }
+      btn.style.borderBottomColor = k === key ? '#F99E1A' : 'transparent';
+      btn.style.color = k === key ? '#F99E1A' : '#555';
     });
   }
-
-  // ── Collapsible history ───────────────────────────────────────────────────
 
   function toggleHistory() {
     const table = document.getElementById('history-table');
     const btn   = document.getElementById('history-toggle');
     if (!table || !btn) return;
     const hidden = table.classList.toggle('hidden');
-    btn.textContent = hidden ? '▼ Show' : '▲ Hide';
+    btn.textContent = hidden ? '▼ SHOW' : '▲ HIDE';
   }
-
-  // ── AJAX refresh ──────────────────────────────────────────────────────────
 
   document.getElementById('refresh-btn')?.addEventListener('click', async () => {
     const btn       = document.getElementById('refresh-btn');
     const label     = document.getElementById('refresh-label');
     const liveStats = document.getElementById('live-stats');
-
     const historyWasVisible = !document.getElementById('history-table')?.classList.contains('hidden');
-
     btn.disabled = true;
-    label.textContent = 'Refreshing…';
+    label.textContent = '↻ …';
     if (liveStats) liveStats.style.opacity = '0.4';
-
     try {
-      const res = await fetch(REFRESH_URL, {
-        method: 'POST',
-        headers: { 'X-Requested-With': 'XMLHttpRequest' },
-      });
-
+      const res = await fetch(REFRESH_URL, { method: 'POST', headers: { 'X-Requested-With': 'XMLHttpRequest' } });
       if (res.ok && liveStats) {
         liveStats.innerHTML = await res.text();
-
         if (historyWasVisible) {
           document.getElementById('history-table')?.classList.remove('hidden');
           const toggle = document.getElementById('history-toggle');
-          if (toggle) toggle.textContent = '▲ Hide';
+          if (toggle) toggle.textContent = '▲ HIDE';
         }
-
         initChart();
       }
-    } catch (e) {
-      console.error('Refresh failed', e);
-    }
-
+    } catch (e) { console.error('Refresh failed', e); }
     btn.disabled = false;
-    label.textContent = 'Refresh stats';
+    label.textContent = '↻ REFRESH';
     if (liveStats) liveStats.style.opacity = '1';
   });
 
+  initRankChart();
   initChart();
 </script>
 

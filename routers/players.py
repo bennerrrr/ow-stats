@@ -33,6 +33,24 @@ def _to_display_tz(dt):
 templates.env.filters["localdt"] = lambda dt, fmt="%b %d, %Y %H:%M %Z": _to_display_tz(dt).strftime(fmt)
 
 
+def _timeago(dt) -> str:
+    if dt is None:
+        return "—"
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    secs = (datetime.now(timezone.utc) - dt).total_seconds()
+    if secs < 7200:
+        return "LIVE"
+    if secs < 86400:
+        return f"{int(secs // 3600)}h ago"
+    if secs < 604800:
+        return f"{int(secs // 86400)}d ago"
+    return f"{int(secs // 604800)}w ago"
+
+
+templates.env.filters["timeago"] = _timeago
+
+
 _ROLE_ORDER = ["tank", "damage", "support"]
 _ROLE_LABELS = {"tank": "Tank", "damage": "Damage", "support": "Support"}
 _ROLE_COLORS = {"tank": "blue", "damage": "red", "support": "green"}
@@ -234,6 +252,43 @@ def _trend_baseline(snaps, days: int = 7):
     return baseline, period
 
 
+def _compute_rank_history(snapshots) -> list[dict]:
+    """Return one entry per distinct rank state, newest first."""
+    if not snapshots:
+        return []
+    history = []
+    prev = None
+    for snap in reversed(snapshots):  # oldest → newest
+        cur = (snap.rank_tank, snap.rank_damage, snap.rank_support, snap.rank_open)
+        if cur != prev and any(cur):
+            history.append({
+                "fetched_at": snap.fetched_at,
+                "rank_tank":    snap.rank_tank,
+                "rank_damage":  snap.rank_damage,
+                "rank_support": snap.rank_support,
+                "rank_open":    snap.rank_open,
+            })
+            prev = cur
+    return list(reversed(history))  # newest first
+
+
+def _rank_history_to_json(rank_history: list[dict]) -> str:
+    result = []
+    for entry in reversed(rank_history):  # oldest first for charting
+        ts = entry["fetched_at"]
+        if ts.tzinfo is None:
+            ts = ts.replace(tzinfo=timezone.utc)
+        result.append({
+            "ts":      ts.isoformat(),
+            "date":    _to_display_tz(ts).strftime("%b %d"),
+            "tank":    entry["rank_tank"],
+            "damage":  entry["rank_damage"],
+            "support": entry["rank_support"],
+            "open":    entry["rank_open"],
+        })
+    return json.dumps(result)
+
+
 def _compute_ow_trend(snaps) -> dict | None:
     baseline, period = _trend_baseline(snaps)
     if baseline is None:
@@ -267,10 +322,23 @@ def _compute_hll_trend(snaps) -> dict | None:
 async def index(request: Request, db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(Player).order_by(Player.added_at))
     players = result.scalars().all()
+    ow_count = sum(1 for p in players if p.game != "hell_let_loose")
+    hll_count = sum(1 for p in players if p.game == "hell_let_loose")
+    return templates.TemplateResponse("index.html", {
+        "request": request,
+        "ow_count": ow_count,
+        "hll_count": hll_count,
+    })
 
-    ow_players, hll_players = [], []
+
+async def _build_game_page(request: Request, game: str, db: AsyncSession):
+    result = await db.execute(select(Player).order_by(Player.added_at))
+    players = result.scalars().all()
+    items = []
     index_cutoff = datetime.now(timezone.utc) - timedelta(days=7)
     for player in players:
+        if player.game != game:
+            continue
         snap_result = await db.execute(
             select(StatSnapshot)
             .where(StatSnapshot.player_id == player.id)
@@ -279,16 +347,23 @@ async def index(request: Request, db: AsyncSession = Depends(get_db)):
         )
         snaps = snap_result.scalars().all()
         latest = snaps[0] if snaps else None
-        if player.game == "hell_let_loose":
-            hll_players.append({"player": player, "snapshot": latest, "trend": _compute_hll_trend(snaps)})
+        if game == "hell_let_loose":
+            items.append({"player": player, "snapshot": latest, "trend": _compute_hll_trend(snaps)})
         else:
-            ow_players.append({"player": player, "snapshot": latest, "trend": _compute_ow_trend(snaps)})
+            items.append({"player": player, "snapshot": latest, "trend": _compute_ow_trend(snaps)})
+    return items
 
-    return templates.TemplateResponse("index.html", {
-        "request": request,
-        "ow_players": ow_players,
-        "hll_players": hll_players,
-    })
+
+@router.get("/overwatch", response_class=HTMLResponse)
+async def overwatch_page(request: Request, db: AsyncSession = Depends(get_db)):
+    players = await _build_game_page(request, "overwatch", db)
+    return templates.TemplateResponse("overwatch.html", {"request": request, "players": players})
+
+
+@router.get("/hll", response_class=HTMLResponse)
+async def hll_page(request: Request, db: AsyncSession = Depends(get_db)):
+    players = await _build_game_page(request, "hell_let_loose", db)
+    return templates.TemplateResponse("hll.html", {"request": request, "players": players})
 
 
 @router.get("/players/{battletag:path}", response_class=HTMLResponse)
@@ -319,6 +394,7 @@ def _build_player_context(player: Player, snapshots) -> dict:
             "snapshots_json": _hll_snapshots_to_json(snapshots),
             "sessions": _compute_hll_sessions(snapshots),
             "role_stats": [],
+            "trend": _compute_hll_trend(snapshots),
         }
     return {
         "player": player,
@@ -326,6 +402,9 @@ def _build_player_context(player: Player, snapshots) -> dict:
         "snapshots_json": _snapshots_to_json(snapshots),
         "role_stats": _compute_role_stats(snapshots[0].top_heroes if snapshots else None),
         "sessions": _compute_sessions(snapshots),
+        "trend": _compute_ow_trend(snapshots),
+        "rank_history": (rh := _compute_rank_history(snapshots)),
+        "rank_history_json": _rank_history_to_json(rh),
     }
 
 
@@ -340,8 +419,9 @@ async def add_player(
     game = game.strip()
 
     existing = await db.execute(select(Player).where(Player.battletag == player_id))
+    redirect_base = "/hll" if game == "hell_let_loose" else "/overwatch"
     if existing.scalar_one_or_none():
-        return RedirectResponse("/?error=already_tracked", status_code=303)
+        return RedirectResponse(f"{redirect_base}?error=already_tracked", status_code=303)
 
     if game == "hell_let_loose":
         return await _add_hll_player_web(player_id, db)
@@ -353,18 +433,18 @@ async def _add_ow_player_web(battletag: str, db: AsyncSession):
     try:
         data = await ow_fetch_player(battletag)
     except OWPlayerNotFoundError:
-        return RedirectResponse("/?error=not_found", status_code=303)
+        return RedirectResponse("/overwatch?error=not_found", status_code=303)
     except ProfilePrivateError:
-        return RedirectResponse("/?error=private", status_code=303)
+        return RedirectResponse("/overwatch?error=private", status_code=303)
     except OverFastError:
-        return RedirectResponse("/?error=api_error", status_code=303)
+        return RedirectResponse("/overwatch?error=api_error", status_code=303)
 
     player = Player(battletag=battletag, game="overwatch", display_name=data.username, avatar_url=data.avatar)
     db.add(player)
     await db.commit()
     await db.refresh(player)
     await snapshot_player(battletag)
-    return RedirectResponse("/", status_code=303)
+    return RedirectResponse("/overwatch", status_code=303)
 
 
 async def _add_hll_player_web(steam_id: str, db: AsyncSession):
@@ -373,18 +453,18 @@ async def _add_hll_player_web(steam_id: str, db: AsyncSession):
     try:
         data = await hll_fetch(steam_id, api_key)
     except PlayerNotFoundError:
-        return RedirectResponse("/?error=hll_not_found", status_code=303)
+        return RedirectResponse("/hll?error=hll_not_found", status_code=303)
     except ProfilePrivateError:
-        return RedirectResponse("/?error=hll_private", status_code=303)
+        return RedirectResponse("/hll?error=hll_private", status_code=303)
     except (HLLClientError, Exception):
-        return RedirectResponse("/?error=api_error", status_code=303)
+        return RedirectResponse("/hll?error=api_error", status_code=303)
 
     player = Player(battletag=steam_id, game="hell_let_loose", display_name=data.display_name, avatar_url=data.avatar)
     db.add(player)
     await db.commit()
     await db.refresh(player)
     await snapshot_player(steam_id)
-    return RedirectResponse("/", status_code=303)
+    return RedirectResponse("/hll", status_code=303)
 
 
 @router.post("/players/{battletag:path}/delete")
@@ -392,8 +472,10 @@ async def delete_player(battletag: str, db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(Player).where(Player.battletag == battletag))
     player = result.scalar_one_or_none()
     if player:
+        game = player.game
         await db.delete(player)
         await db.commit()
+        return RedirectResponse("/hll" if game == "hell_let_loose" else "/overwatch", status_code=303)
     return RedirectResponse("/", status_code=303)
 
 

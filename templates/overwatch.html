@@ -1,0 +1,207 @@
+{% extends "base.html" %}
+{% block title %}Overwatch 2 — STATS.CMD{% endblock %}
+
+{% block content %}
+
+<!-- Page header -->
+<div class="flex items-end gap-4 mb-5">
+  <div>
+    <div class="text-xs text-gray-600 tracking-[0.25em] uppercase mb-1">// SECTOR 01</div>
+    <h1 class="text-xl font-bold text-white tracking-wide">⚔ OVERWATCH 2</h1>
+  </div>
+  <span class="text-xs text-gray-600 mb-1">{{ players | length }} OPERATOR{{ 'S' if players | length != 1 }}</span>
+</div>
+
+<!-- Error banner -->
+{% set error = request.query_params.get('error') %}
+{% if error %}
+<div style="border-left:3px solid {% if error == 'private' %}#ff8800{% elif error == 'already_tracked' %}#3b82f6{% else %}#ff4444{% endif %};background:rgba(255,68,68,0.05);"
+  class="mb-5 px-4 py-3 text-xs">
+  {% if error == 'private' %}⚠ PROFILE PRIVATE — set Career Profile Visibility to Public in-game.
+  {% elif error == 'not_found' %}⚠ PLAYER NOT FOUND — double-check BattleTag (format: Name#1234).
+  {% elif error == 'already_tracked' %}⚠ ALREADY TRACKED — that operator is already in the system.
+  {% else %}⚠ API ERROR — try again in a moment.{% endif %}
+</div>
+{% endif %}
+
+<!-- Add player form -->
+<form method="post" action="/players/add"
+  style="background:#111111;border:1px solid #272727;border-left:3px solid #F99E1A;"
+  class="flex flex-wrap gap-2 items-center mb-6 px-4 py-3">
+  <input type="hidden" name="game" value="overwatch" />
+  <span class="text-xs text-gray-600 uppercase tracking-widest">// ADD OPERATOR</span>
+  <div class="flex gap-2 ml-auto flex-wrap">
+    <input type="text" name="player_id" placeholder="BattleTag#1234" required
+      style="background:#0a0a0a;border:1px solid #333;"
+      class="px-3 py-1.5 text-xs text-white placeholder-gray-700 focus:outline-none focus:border-ow-orange w-48" />
+    <button type="submit"
+      style="background:#F99E1A;color:#000;"
+      class="font-bold text-xs px-4 py-1.5 uppercase tracking-wider hover:opacity-90 transition-opacity">
+      + TRACK
+    </button>
+  </div>
+</form>
+
+<!-- Player grid -->
+{% if not players %}
+<div style="background:#111111;border:1px solid #272727;border-left:3px solid #333;" class="px-6 py-12 text-center">
+  <p class="text-gray-600 text-xs uppercase tracking-wider">NO OPERATORS TRACKED</p>
+  <p class="text-gray-700 text-xs mt-2">Add a BattleTag above to start tracking.</p>
+</div>
+{% else %}
+<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+  {% for item in players %}
+  {% set player = item.player %}
+  {% set snap = item.snapshot %}
+  {% set t = item.trend %}
+  {% set freshness = snap.fetched_at | timeago if snap else none %}
+  {# Hide raw ID on card if it's not a standard BattleTag (Username#1234) #}
+  {% set _std_tag = '#' in player.battletag %}
+
+  <div style="background:#111111;border:1px solid #272727;border-left:3px solid {% if freshness == 'LIVE' %}#44ff88{% else %}#F99E1A{% endif %};"
+    class="p-4 flex flex-col gap-3 transition-all duration-150 hover:bg-[#161616]">
+
+    <!-- Header: avatar + name + status -->
+    <div class="flex items-center gap-3">
+      {% if player.avatar_url %}
+      <img src="{{ player.avatar_url }}" alt="{{ player.display_name }}"
+        class="w-9 h-9 object-cover shrink-0" style="border:1px solid #333;" />
+      {% else %}
+      <div class="w-9 h-9 flex items-center justify-center text-ow-orange font-bold text-sm shrink-0"
+        style="background:#1a1a1a;border:1px solid #333;">
+        {{ (player.display_name or player.battletag)[0].upper() }}
+      </div>
+      {% endif %}
+      <div class="min-w-0 flex-1">
+        <a href="/players/{{ player.battletag | urltag }}"
+          class="font-bold text-white hover:text-ow-orange transition-colors truncate block text-sm uppercase tracking-wide">
+          {{ player.display_name or player.battletag.split('#')[0] }}
+        </a>
+        {% if _std_tag %}
+        <p class="text-xs text-gray-600 truncate">{{ player.battletag }}</p>
+        {% endif %}
+      </div>
+      <!-- Status indicator -->
+      {% if freshness %}
+      <div class="flex items-center gap-1.5 shrink-0">
+        {% if freshness == 'LIVE' %}
+        <span class="w-1.5 h-1.5 rounded-full bg-[#44ff88] status-live"></span>
+        <span class="text-[10px] text-[#44ff88] uppercase tracking-wider">LIVE</span>
+        {% else %}
+        <span class="w-1.5 h-1.5 rounded-full bg-gray-700"></span>
+        <span class="text-[10px] text-gray-600 uppercase tracking-wider">{{ freshness }}</span>
+        {% endif %}
+      </div>
+      {% endif %}
+    </div>
+
+    {% if snap %}
+
+    <!-- Rank badges -->
+    {% set has_rank = snap.rank_tank or snap.rank_damage or snap.rank_support or snap.rank_open %}
+    {% if has_rank %}
+    <div class="flex flex-wrap gap-1">
+      {% for role, rank in [('T', snap.rank_tank), ('D', snap.rank_damage), ('S', snap.rank_support), ('O', snap.rank_open)] %}
+      {% if rank %}
+      {% set tier = rank.split(' ')[0].lower() %}
+      <span class="text-[10px] font-bold px-1.5 py-0.5"
+        style="border:1px solid {% if tier == 'champion' %}#db2777{% elif tier == 'grandmaster' %}#f97316{% elif tier == 'master' %}#a855f7{% elif tier == 'diamond' %}#3b82f6{% elif tier == 'platinum' %}#06b6d4{% elif tier == 'gold' %}#eab308{% elif tier == 'silver' %}#6b7280{% elif tier == 'bronze' %}#d97706{% else %}#333{% endif %};background:rgba(0,0,0,0.4);color:{% if tier == 'champion' %}#f472b6{% elif tier == 'grandmaster' %}#fb923c{% elif tier == 'master' %}#c084fc{% elif tier == 'diamond' %}#60a5fa{% elif tier == 'platinum' %}#22d3ee{% elif tier == 'gold' %}#facc15{% elif tier == 'silver' %}#9ca3af{% elif tier == 'bronze' %}#fbbf24{% else %}#aaa{% endif %};">
+        {{ role }}:{{ rank }}
+      </span>
+      {% endif %}
+      {% endfor %}
+    </div>
+    {% else %}
+    <span class="text-[10px] text-gray-700 uppercase tracking-wider">UNRANKED</span>
+    {% endif %}
+
+    <!-- Primary stats -->
+    <div class="grid grid-cols-3 gap-2 text-center" style="border-top:1px solid #1e1e1e;padding-top:10px;">
+      <!-- Win Rate -->
+      <div>
+        {% if snap.win_rate is not none %}
+        {% set wr = (snap.win_rate * 100) | round | int %}
+        <p class="text-lg font-bold {% if wr >= 55 %}text-[#44ff88] glow-green{% elif wr < 45 %}text-red-400{% else %}text-ow-orange glow-orange{% endif %}">
+          {{ wr }}%
+        </p>
+        <div class="stat-bar mx-auto max-w-[40px]">
+          <div class="stat-bar-fill {% if wr >= 55 %}bg-[#44ff88]{% elif wr < 45 %}bg-red-400{% else %}bg-ow-orange{% endif %}" style="width:{{ wr }}%"></div>
+        </div>
+        {% else %}
+        <p class="text-lg font-bold text-gray-700">—</p>
+        {% endif %}
+        <p class="text-[10px] text-gray-600 uppercase tracking-wider mt-1">WR</p>
+      </div>
+      <!-- KDA -->
+      <div>
+        {% if snap.kda is not none %}
+        <p class="text-lg font-bold {% if snap.kda >= 3.0 %}text-ow-cyan glow-cyan{% elif snap.kda < 2.0 %}text-red-400{% else %}text-gray-300{% endif %}">
+          {{ "%.2f"|format(snap.kda) }}
+        </p>
+        {% else %}
+        <p class="text-lg font-bold text-gray-700">—</p>
+        {% endif %}
+        <p class="text-[10px] text-gray-600 uppercase tracking-wider mt-1">KDA</p>
+      </div>
+      <!-- Games -->
+      <div>
+        <p class="text-lg font-bold text-gray-300">
+          {{ snap.games_played if snap.games_played is not none else '—' }}
+        </p>
+        <p class="text-[10px] text-gray-600 uppercase tracking-wider mt-1">GAMES</p>
+      </div>
+    </div>
+
+    <!-- Trend row -->
+    {% if t and (t.wr_delta is not none or t.kda_delta is not none) %}
+    <div class="flex items-center gap-3 text-[10px] flex-wrap" style="border-top:1px solid #1e1e1e;padding-top:8px;">
+      <span class="text-gray-700">{{ t.period }}D</span>
+      {% if t.wr_delta is not none and t.wr_delta != 0 %}
+      <span class="{% if t.wr_delta > 0 %}text-[#44ff88]{% else %}text-red-400{% endif %}">
+        {{ '↑' if t.wr_delta > 0 else '↓' }} WR {% if t.wr_delta > 0 %}+{% endif %}{{ t.wr_delta }}%
+      </span>
+      {% endif %}
+      {% if t.kda_delta is not none and t.kda_delta != 0 %}
+      <span class="ml-auto {% if t.kda_delta > 0 %}text-[#44ff88]{% else %}text-red-400{% endif %}">
+        {{ '↑' if t.kda_delta > 0 else '↓' }} KDA {% if t.kda_delta > 0 %}+{% endif %}{{ t.kda_delta }}
+      </span>
+      {% endif %}
+    </div>
+    {% endif %}
+
+    <!-- Top hero -->
+    {% if snap.top_heroes %}
+    {% set hero = snap.top_heroes[0] %}
+    <div class="flex items-center gap-2 text-[10px]" style="border-top:1px solid #1e1e1e;padding-top:8px;">
+      <span class="text-gray-700 uppercase tracking-wider">TOP</span>
+      <span class="text-gray-400 font-bold">{{ hero.name }}</span>
+      {% if hero.time_played %}
+      <span class="ml-auto text-gray-700">{{ hero.time_played // 3600 }}h {{ (hero.time_played % 3600) // 60 }}m</span>
+      {% endif %}
+    </div>
+    {% endif %}
+
+    {% else %}
+    <p class="text-[10px] text-gray-700 uppercase tracking-wider">AWAITING FIRST POLL…</p>
+    {% endif %}
+
+    <!-- Footer actions -->
+    <div class="flex gap-3 items-center" style="border-top:1px solid #1e1e1e;padding-top:8px;">
+      <div class="flex gap-3 ml-auto">
+        <a href="/players/{{ player.battletag | urltag }}" class="text-[10px] text-ow-blue hover:text-ow-cyan uppercase tracking-wider transition-colors">STATS</a>
+        <form method="post" action="/players/{{ player.battletag | urltag }}/refresh">
+          <button type="submit" class="text-[10px] text-gray-700 hover:text-gray-400 uppercase tracking-wider transition-colors">REFRESH</button>
+        </form>
+        <form method="post" action="/players/{{ player.battletag | urltag }}/delete"
+          onsubmit="return confirm('Remove {{ player.display_name or player.battletag }}?')">
+          <button type="submit" class="text-[10px] text-red-900 hover:text-red-500 uppercase tracking-wider transition-colors">REMOVE</button>
+        </form>
+      </div>
+    </div>
+
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+{% endblock %}

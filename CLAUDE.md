@@ -23,15 +23,40 @@ ow_client.py         — OverFast API client, 1h cache, returns PlayerData datac
 hll_client.py        — Steam Web API client, 30m cache, returns HLLPlayerData dataclass
 discord_bot.py       — discord.py bot, slash commands, embed builders, notification queue
 routers/players.py   — All HTTP routes, snapshot-to-JSON helpers, session/trend computation
+                       Key helpers: _build_player_context, _compute_rank_history,
+                       _rank_history_to_json, _compute_ow_trend, _compute_hll_trend
+                       Custom Jinja2 filters: localdt, urltag, timeago ("LIVE"/"2h ago"/"3d ago")
 templates/
-  base.html          — Tailwind layout, nav
-  index.html         — Player list overview
-  player.html        — Per-player detail page (header, chart JS, AJAX refresh logic)
+  base.html          — Global layout, worldmonitor-style dark theme (#0a0a0a bg, #111111 cards,
+                       #272727 borders), SF Mono font stack, status-pulse animation, glow classes
+  index.html         — Command hub landing page: SECTOR 01/02 entry cards with player counts
+  overwatch.html     — OW2 game page: player grid, add-form, left-orange-border cards,
+                       LIVE/stale status dot per card; hides non-standard battletags (no '#')
+  hll.html           — HLL game page: player grid, add-form, left-green-border cards
+  player.html        — Per-player detail page; command panel + rank chart side-by-side flex row;
+                       initRankChart() step-line chart with tier-colored axes; initOWChart/HLLChart;
+                       AJAX refresh via XHR header; hides non-standard battletags on header
   partials/
-    player_live.html — Swappable stats content (chart data tag, stat cards, session table)
-    stats_panel.html — Reusable hero/stats table included by player_live.html
+    player_live.html — Swappable stats content (OW2: career stats, role cards from raw_stats.roles,
+                       gamemode tabs, rank history table, sessions; HLL: career overview with
+                       derived rates, combat/support, role breakdown, sessions)
+    stats_panel.html — Reusable hero/stats table with games-played column from raw_stats.heroes
 cleanup_dupes.py     — One-shot script to delete pre-deduplication duplicate snapshot rows
 ```
+
+## Routes
+
+| Method | Path | Template | Description |
+|---|---|---|---|
+| GET | `/` | `index.html` | Hub landing — player counts only, links to game pages |
+| GET | `/overwatch` | `overwatch.html` | OW2 player grid + add-player form |
+| GET | `/hll` | `hll.html` | HLL player grid + add-player form |
+| GET | `/players/{battletag}` | `player.html` | Per-player detail page |
+| POST | `/players/add` | — | Add player; redirects to `/overwatch` or `/hll` |
+| POST | `/players/{battletag}/delete` | — | Remove player; redirects to game page |
+| POST | `/players/{battletag}/refresh` | partial or redirect | Refresh stats; AJAX returns `player_live.html` fragment |
+
+Add/delete redirects go to the game-specific page (`/overwatch` or `/hll`), not `/`.
 
 ## Data model
 
@@ -64,7 +89,7 @@ Change detection uses `_ow_ranks_or_stats_changed()` (ranks + games_played + kda
 
 All snapshot queries use **time-based cutoffs, not row count limits**:
 - Player detail page: `WHERE fetched_at >= NOW() - 90 days`
-- Index page trend: `WHERE fetched_at >= NOW() - 7 days`
+- Game pages (`/overwatch`, `/hll`) trend: `WHERE fetched_at >= NOW() - 7 days`
 - Refresh AJAX endpoint: same 90-day cutoff as player detail
 
 Never use `.limit(N)` for snapshot queries — with polling every 30 min and even a few duplicates, a count limit translates to an unpredictable time window.
@@ -99,9 +124,11 @@ The Discord notification queue (`_notification_queue` in `discord_bot.py`) buffe
 
 The JS in `player.html` posts with the XHR header, swaps `#live-stats` innerHTML, then re-runs `initChart()` which reads the updated `#snapshot-data` JSON element.
 
-## Chart (Chart.js)
+## Charts (Chart.js 4.4, all in player.html)
 
-`initOWChart()` — line chart, dual Y-axes. Left (`yWR`): overall win rate %, comp win rate %, QP win rate % (dashed, shown when data available). Right (`yKDA`): KDA.
+`initRankChart()` — compact stepped line chart (OW2 only) placed side-by-side with the command panel. Data from `rank_history_json` (chronological rank-change snapshots). Tier-colored y-axis labels, filled area under each line, no legend. Only shown when ≥2 distinct rank states exist in the 90-day window.
+
+`initOWChart()` — line chart, dual Y-axes. Left (`yWR`): overall win rate %, comp win rate %, QP win rate % (dashed). Right (`yKDA`): KDA.
 
 `initHLLChart()` — line chart, dual Y-axes. Left (`yKills`): career kills, headshots (dotted, conditional). Right (`yXP`): total XP (dashed, conditional).
 
@@ -113,8 +140,10 @@ The JS in `player.html` posts with the XHR header, swaps `#live-stats` innerHTML
 2. Add `game_data` fields to `StatSnapshot` or add new columns via `init_db()` ALTER block
 3. Add `_snapshot_newgame()` to `scheduler.py` following the change-gate pattern
 4. Wire into `snapshot_player()` dispatch and `_pending_sessions` tracking
-5. Add JSON helper and context builder in `routers/players.py`
-6. Add template branch in `partials/player_live.html`
+5. Add JSON helper and context builder in `routers/players.py`; add `GET /newgame` route + `_build_game_page` helper
+6. Create `templates/newgame.html` game page (follow `overwatch.html` / `hll.html` pattern)
+7. Add template branch in `partials/player_live.html`
+8. Add SECTOR card to `index.html` hub
 
 ## Common gotchas
 
@@ -125,3 +154,6 @@ The JS in `player.html` posts with the XHR header, swaps `#live-stats` innerHTML
 - **`snapshot_player()` uses its own session** — after calling it, always `await db.refresh(player)` in the caller's session if you need fresh player data.
 - **HLL `battletag` field holds the Steam ID** — the `battletag` column is game-agnostic; for HLL players it stores the Steam64 ID.
 - **`player_live.html` is rendered both inside `player.html` and directly by the refresh endpoint** — it must be self-contained and guard against empty `snapshots`.
+- **Non-standard OW battletags** — some players are added via internal hash/UUID (no `#` in the string). Templates detect this with `'#' in player.battletag` and hide the raw ID from display; the API still uses it as-is for lookups.
+- **OW role stats use `raw_stats.roles`, not `top_heroes` aggregation** — `raw_stats.roles.{tank|damage|support}` has exact game counts, W/L, KDA, deaths, damage per role. The `role_stats` context variable (from `_compute_role_stats`) is still computed but not used for display; `raw_stats.roles` is read directly in the template.
+- **`_build_player_context` (OW2) returns `rank_history` + `rank_history_json`** — `rank_history` is newest-first list of dicts (one per distinct rank state); `rank_history_json` is the chronological JSON for the rank chart. Both are empty/`"[]"` when no snapshots exist.

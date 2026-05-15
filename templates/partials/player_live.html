@@ -1,7 +1,7 @@
 {# Snapshot data for Chart.js #}
 <script type="application/json" id="snapshot-data">{{ snapshots_json | safe }}</script>
 
-{% if not snapshots %}<p class="text-gray-500 italic">No snapshots yet.</p>{% else %}
+{% if not snapshots %}<p class="text-gray-500 italic font-mono text-xs">NO SNAPSHOTS YET.</p>{% else %}
 {% set latest = snapshots[0] %}
 
 {# ═══════════════════════════════════════════════════════════════
@@ -27,54 +27,92 @@
 
 <!-- Career Overview -->
 <section class="mb-8">
-  <h2 class="text-lg font-semibold text-white mb-4">Career Overview</h2>
+  <div class="hud-section-header"><h2>💀 Career Overview</h2></div>
   <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
 
-    <div class="bg-ow-card border border-ow-border rounded-xl p-4 text-center">
-      <p class="text-3xl font-bold text-hll-indigo">
+    <div class="p-4 text-center" style="background:#111111;border:1px solid #272727;">
+      <p class="text-3xl font-mono font-bold text-hll-bright glow-green">
         {% if kills is not none %}{{ "{:,}".format(kills) }}{% else %}—{% endif %}
       </p>
-      <p class="text-xs text-gray-500 mt-1 uppercase tracking-wide">Total Kills</p>
+      <p class="text-xs font-mono text-gray-500 mt-1 uppercase tracking-wider">Total Kills</p>
       {% if kills and hs is not none %}
-      <p class="text-xs text-gray-600 mt-0.5">{{ "{:,}".format(hs) }} headshots</p>
+      <p class="text-xs text-gray-600 mt-0.5 font-mono">{{ "{:,}".format(hs) }} headshots</p>
       {% endif %}
     </div>
 
-    <div class="bg-ow-card border border-ow-border rounded-xl p-4 text-center">
-      <p class="text-3xl font-bold {% if hs_pct is not none and hs_pct >= 25 %}text-green-400{% elif hs_pct is not none %}text-hll-indigo{% else %}text-gray-500{% endif %}">
+    <div class="p-4 text-center" style="background:#111111;border:1px solid #272727;">
+      <p class="text-3xl font-mono font-bold
+        {% if hs_pct is not none and hs_pct >= 25 %}text-green-400 glow-green
+        {% elif hs_pct is not none and hs_pct < 15 %}text-red-400
+        {% elif hs_pct is not none %}text-hll-bright
+        {% else %}text-gray-500{% endif %}">
         {% if hs_pct is not none %}{{ hs_pct }}%{% else %}—{% endif %}
       </p>
-      <p class="text-xs text-gray-500 mt-1 uppercase tracking-wide">Headshot %</p>
+      <p class="text-xs font-mono text-gray-500 mt-1 uppercase tracking-wider">Headshot %</p>
       {% if hs_pct is not none %}
-      <p class="text-xs text-gray-600 mt-0.5">
-        {% if hs_pct >= 30 %}Excellent{% elif hs_pct >= 20 %}Good{% else %}Average{% endif %}
+      <p class="text-xs text-gray-600 mt-0.5 font-mono">
+        {% if hs_pct >= 30 %}🎯 Excellent{% elif hs_pct >= 20 %}Good{% else %}Average{% endif %}
       </p>
       {% endif %}
     </div>
 
-    <div class="bg-ow-card border border-ow-border rounded-xl p-4 text-center">
-      <p class="text-3xl font-bold text-hll-indigo">
+    <div class="p-4 text-center" style="background:#111111;border:1px solid #272727;">
+      <p class="text-3xl font-mono font-bold
+        {% if kph is not none and kph >= 20 %}text-ow-cyan glow-cyan
+        {% elif kph is not none %}text-hll-bright
+        {% else %}text-gray-500{% endif %}">
         {% if kph is not none %}{{ kph }}{% else %}—{% endif %}
       </p>
-      <p class="text-xs text-gray-500 mt-1 uppercase tracking-wide">Kills / Hour</p>
+      <p class="text-xs font-mono text-gray-500 mt-1 uppercase tracking-wider">Kills / Hour</p>
       {% if kph is not none %}
-      <p class="text-xs text-gray-600 mt-0.5">
-        {% if kph >= 20 %}High fragging{% elif kph >= 10 %}Consistent{% else %}Support focus{% endif %}
+      <p class="text-xs text-gray-600 mt-0.5 font-mono">
+        {% if kph >= 20 %}⚡ High fragging{% elif kph >= 10 %}Consistent{% else %}Support focus{% endif %}
       </p>
       {% endif %}
     </div>
 
-    <div class="bg-ow-card border border-ow-border rounded-xl p-4 text-center">
-      <p class="text-3xl font-bold text-hll-indigo">
+    <div class="p-4 text-center" style="background:#111111;border:1px solid #272727;">
+      <p class="text-3xl font-mono font-bold text-gray-200">
         {% if pt is not none %}{{ pt // 60 }}h{% else %}—{% endif %}
       </p>
-      <p class="text-xs text-gray-500 mt-1 uppercase tracking-wide">Total Hours</p>
+      <p class="text-xs font-mono text-gray-500 mt-1 uppercase tracking-wider">Total Hours</p>
       {% if pt2w is not none %}
-      <p class="text-xs text-gray-600 mt-0.5">{{ pt2w // 60 }}h {{ pt2w % 60 }}m last 2wk</p>
+      <p class="text-xs text-gray-600 mt-0.5 font-mono">{{ pt2w // 60 }}h {{ pt2w % 60 }}m last 2wk</p>
       {% endif %}
     </div>
 
   </div>
+
+  {# Derived rates (XP/hr, caps/hr, support actions/hr) — only when we have enough playtime #}
+  {% if pt and pt > 0 %}
+  {% set _hrs = pt / 60 %}
+  <div class="flex flex-wrap gap-3 mt-3">
+    {% if xp %}
+    {% set _xp_hr = (xp / _hrs) | round | int %}
+    <div class="px-4 py-2 text-center" style="background:#111111;border:1px solid #272727;">
+      <p class="text-lg font-bold text-gray-200">
+        {% if _xp_hr >= 1000000 %}{{ "%.1f"|format(_xp_hr / 1000000) }}M
+        {% elif _xp_hr >= 1000 %}{{ "%.1f"|format(_xp_hr / 1000) }}k
+        {% else %}{{ _xp_hr }}{% endif %}
+      </p>
+      <p class="text-[10px] text-gray-600 uppercase tracking-wider mt-0.5">XP / Hour</p>
+    </div>
+    {% endif %}
+    {% if scaps %}
+    <div class="px-4 py-2 text-center" style="background:#111111;border:1px solid #272727;">
+      <p class="text-lg font-bold text-gray-200">{{ (scaps / _hrs) | round(1) }}</p>
+      <p class="text-[10px] text-gray-600 uppercase tracking-wider mt-0.5">Caps / Hour</p>
+    </div>
+    {% endif %}
+    {% set _support_total = (ammo or 0) + (supply or 0) %}
+    {% if _support_total > 0 %}
+    <div class="px-4 py-2 text-center" style="background:#111111;border:1px solid #272727;">
+      <p class="text-lg font-bold text-gray-200">{{ (_support_total / _hrs) | round(1) }}</p>
+      <p class="text-[10px] text-gray-600 uppercase tracking-wider mt-0.5">Drops / Hour</p>
+    </div>
+    {% endif %}
+  </div>
+  {% endif %}
 </section>
 
 <!-- Combat Details -->
@@ -82,66 +120,66 @@
 {% set has_support_detail = ammo or supply or commend %}
 {% if has_combat_detail or has_support_detail %}
 <section class="mb-8">
-  <h2 class="text-lg font-semibold text-white mb-4">Combat &amp; Support</h2>
+  <div class="hud-section-header"><h2>🎯 Combat &amp; Support</h2></div>
   <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
 
     {% if tkills %}
-    <div class="bg-ow-card border border-ow-border rounded-lg p-3 text-center">
-      <p class="text-xl font-bold text-gray-200">{{ "{:,}".format(tkills) }}</p>
-      <p class="text-xs text-gray-500 mt-0.5">Vehicles Destroyed</p>
-      <p class="text-xs text-gray-600">{{ gd.get('tank_kills') or 0 }} tanks · {{ gd.get('vehicle_kills') or 0 }} other</p>
+    <div class="p-3 text-center" style="background:#111111;border:1px solid #272727;">
+      <p class="text-xl font-mono font-bold text-gray-200">{{ "{:,}".format(tkills) }}</p>
+      <p class="text-xs font-mono text-gray-500 mt-0.5 uppercase tracking-wider">Vehicles Destroyed</p>
+      <p class="text-xs text-gray-600 font-mono">{{ gd.get('tank_kills') or 0 }} tanks · {{ gd.get('vehicle_kills') or 0 }} other</p>
     </div>
     {% endif %}
 
     {% if artkills %}
-    <div class="bg-ow-card border border-ow-border rounded-lg p-3 text-center">
-      <p class="text-xl font-bold text-gray-200">{{ "{:,}".format(artkills) }}</p>
-      <p class="text-xs text-gray-500 mt-0.5">Artillery Kills</p>
+    <div class="p-3 text-center" style="background:#111111;border:1px solid #272727;">
+      <p class="text-xl font-mono font-bold text-gray-200">{{ "{:,}".format(artkills) }}</p>
+      <p class="text-xs font-mono text-gray-500 mt-0.5 uppercase tracking-wider">Artillery Kills</p>
     </div>
     {% endif %}
 
     {% if melee %}
-    <div class="bg-ow-card border border-ow-border rounded-lg p-3 text-center">
-      <p class="text-xl font-bold text-gray-200">{{ "{:,}".format(melee) }}</p>
-      <p class="text-xs text-gray-500 mt-0.5">Melee Kills</p>
-      <p class="text-xs text-gray-600">{{ gd.get('knife_kills') or 0 }} knife · {{ gd.get('spade_kills') or 0 }} spade</p>
+    <div class="p-3 text-center" style="background:#111111;border:1px solid #272727;">
+      <p class="text-xl font-mono font-bold text-gray-200">{{ "{:,}".format(melee) }}</p>
+      <p class="text-xs font-mono text-gray-500 mt-0.5 uppercase tracking-wider">Melee Kills</p>
+      <p class="text-xs text-gray-600 font-mono">{{ gd.get('knife_kills') or 0 }} knife · {{ gd.get('spade_kills') or 0 }} spade</p>
     </div>
     {% endif %}
 
     {% if scaps %}
-    <div class="bg-ow-card border border-ow-border rounded-lg p-3 text-center">
-      <p class="text-xl font-bold text-gray-200">{{ "{:,}".format(scaps) }}</p>
-      <p class="text-xs text-gray-500 mt-0.5">Sector Captures</p>
+    <div class="p-3 text-center" style="background:#111111;border:1px solid #272727;">
+      <p class="text-xl font-mono font-bold text-hll-bright">{{ "{:,}".format(scaps) }}</p>
+      <p class="text-xs font-mono text-gray-500 mt-0.5 uppercase tracking-wider">Sector Captures</p>
     </div>
     {% endif %}
 
     {% if ammo %}
-    <div class="bg-ow-card border border-ow-border rounded-lg p-3 text-center">
-      <p class="text-xl font-bold text-gray-200">{{ "{:,}".format(ammo) }}</p>
-      <p class="text-xs text-gray-500 mt-0.5">Ammo Drops</p>
+    <div class="p-3 text-center" style="background:#111111;border:1px solid #272727;">
+      <p class="text-xl font-mono font-bold text-gray-200">{{ "{:,}".format(ammo) }}</p>
+      <p class="text-xs font-mono text-gray-500 mt-0.5 uppercase tracking-wider">Ammo Drops</p>
     </div>
     {% endif %}
 
     {% if supply %}
-    <div class="bg-ow-card border border-ow-border rounded-lg p-3 text-center">
-      <p class="text-xl font-bold text-gray-200">{{ "{:,}".format(supply) }}</p>
-      <p class="text-xs text-gray-500 mt-0.5">Supply Drops</p>
+    <div class="p-3 text-center" style="background:#111111;border:1px solid #272727;">
+      <p class="text-xl font-mono font-bold text-gray-200">{{ "{:,}".format(supply) }}</p>
+      <p class="text-xs font-mono text-gray-500 mt-0.5 uppercase tracking-wider">Supply Drops</p>
     </div>
     {% endif %}
 
     {% if commend %}
-    <div class="bg-ow-card border border-ow-border rounded-lg p-3 text-center">
-      <p class="text-xl font-bold text-gray-200">{{ "{:,}".format(commend) }}</p>
-      <p class="text-xs text-gray-500 mt-0.5">Commendations</p>
+    <div class="p-3 text-center" style="background:#111111;border:1px solid #272727;">
+      <p class="text-xl font-mono font-bold text-gray-200">{{ "{:,}".format(commend) }}</p>
+      <p class="text-xs font-mono text-gray-500 mt-0.5 uppercase tracking-wider">Commendations</p>
     </div>
     {% endif %}
 
     {% if xp %}
-    <div class="bg-ow-card border border-ow-border rounded-lg p-3 text-center">
-      <p class="text-xl font-bold text-gray-200">
+    <div class="p-3 text-center" style="background:#111111;border:1px solid #272727;">
+      <p class="text-xl font-mono font-bold text-gray-200">
         {% if xp >= 1000000 %}{{ "%.1f"|format(xp / 1000000) }}M{% elif xp >= 1000 %}{{ (xp // 1000) }}k{% else %}{{ xp }}{% endif %}
       </p>
-      <p class="text-xs text-gray-500 mt-0.5">Total XP</p>
+      <p class="text-xs font-mono text-gray-500 mt-0.5 uppercase tracking-wider">Total XP</p>
     </div>
     {% endif %}
 
@@ -153,40 +191,41 @@
 {% set role_xp = gd.get('role_xp') or {} %}
 {% if role_xp %}
 <section class="mb-8">
-  <h2 class="text-lg font-semibold text-white mb-4">Role Breakdown
+  <div class="hud-section-header">
+    <h2>🪖 Role Breakdown</h2>
     {% if gd.get('top_role') %}
-    <span class="text-sm font-normal text-gray-500 ml-2">Top role: <span class="text-hll-indigo font-medium">{{ gd.top_role }}</span></span>
+    <span class="text-xs font-mono text-gray-600">TOP: <span class="text-hll-bright font-bold">{{ gd.top_role }}</span></span>
     {% endif %}
-  </h2>
-  <div class="bg-ow-card border border-ow-border rounded-xl overflow-hidden">
+  </div>
+  <div class="overflow-hidden" style="background:#111111;border:1px solid #272727;">
     <table class="w-full text-sm">
-      <thead class="bg-ow-border text-gray-400 text-xs uppercase">
+      <thead class="text-gray-600 text-xs uppercase font-mono" style="background:#1a1a1a;">
         <tr>
-          <th class="px-4 py-3 text-left">Role</th>
-          <th class="px-4 py-3 text-right">XP Earned</th>
-          <th class="px-4 py-3 text-right w-40">Share</th>
+          <th class="px-4 py-3 text-left tracking-wider">Role</th>
+          <th class="px-4 py-3 text-right tracking-wider">XP Earned</th>
+          <th class="px-4 py-3 text-right w-40 tracking-wider">Share</th>
         </tr>
       </thead>
-      <tbody class="divide-y divide-ow-border">
+      <tbody class="divide-y divide-[#1a1a1a]">
         {% set sorted_roles = (role_xp | dictsort(by='value', reverse=true))[:10] %}
         {% set total_role_xp = role_xp.values() | sum %}
         {% for role_name, rxp in sorted_roles %}
         {% set pct = (rxp / total_role_xp * 100) if total_role_xp > 0 else 0 %}
-        <tr class="hover:bg-ow-border/40 transition-colors {% if loop.first %}bg-hll-indigo/5{% endif %}">
-          <td class="px-4 py-2.5 font-medium {% if loop.first %}text-hll-indigo{% else %}text-gray-300{% endif %}">
+        <tr class="transition-colors {% if loop.first %}bg-[#141414]{% endif %}" style="{% if not loop.first %}border-top:1px solid #1a1a1a;{% endif %};">
+          <td class="px-4 py-2.5 font-mono font-bold {% if loop.first %}text-hll-bright{% else %}text-gray-300{% endif %}">
             {% if loop.first %}⭐ {% endif %}{{ role_name }}
           </td>
-          <td class="px-4 py-2.5 text-right text-gray-400 tabular-nums">
+          <td class="px-4 py-2.5 text-right text-gray-400 font-mono tabular-nums">
             {% if rxp >= 1000000 %}{{ "%.2f"|format(rxp / 1000000) }}M
             {% elif rxp >= 1000 %}{{ "%.1f"|format(rxp / 1000) }}k
             {% else %}{{ rxp }}{% endif %}
           </td>
           <td class="px-4 py-2.5 text-right">
             <div class="flex items-center justify-end gap-2">
-              <div class="w-24 bg-ow-border rounded-full h-1.5">
-                <div class="bg-hll-indigo h-1.5 rounded-full" style="width:{{ pct | int }}%"></div>
+              <div class="w-24 rounded-full h-1.5" style="background:#222;">
+                <div class="bg-hll-bright h-1.5 rounded-full" style="width:{{ pct | int }}%"></div>
               </div>
-              <span class="text-gray-500 text-xs w-9 text-right">{{ "%.1f"|format(pct) }}%</span>
+              <span class="text-gray-500 text-xs font-mono w-9 text-right">{{ "%.1f"|format(pct) }}%</span>
             </div>
           </td>
         </tr>
@@ -199,15 +238,15 @@
 
 <!-- Career Progression Chart -->
 <section class="mb-8">
-  <div class="bg-ow-card border border-ow-border rounded-xl p-4">
+  <div class="p-4" style="background:#111111;border:1px solid #272727;">
     <div class="flex items-center justify-between mb-4">
-      <h2 class="text-lg font-semibold text-white">Career Progression</h2>
+      <div class="hud-section-header mb-0"><h2>📈 Career Progression</h2></div>
       {% if snapshots | length >= 2 %}
       <div class="flex gap-1" id="chart-filters">
-        {% for label, val in [('7d','7'),('30d','30'),('90d','90'),('All','')] %}
+        {% for label, val in [('7D','7'),('30D','30'),('90D','90'),('ALL','')] %}
         <button data-days="{{ val }}" onclick="filterChart({{ val if val else 'null' }})"
-          class="text-xs px-2.5 py-1 rounded border transition-colors
-            {% if loop.last %}border-hll-indigo text-hll-indigo{% else %}border-transparent text-gray-500 hover:text-gray-200{% endif %}">
+          class="text-xs px-2.5 py-1 rounded border transition-colors font-mono
+            {% if loop.last %}border-hll-bright text-hll-bright{% else %}border-transparent text-gray-500 hover:text-gray-200{% endif %}">
           {{ label }}
         </button>
         {% endfor %}
@@ -217,7 +256,7 @@
     {% if snapshots | length >= 2 %}
     <div style="position:relative;height:300px"><canvas id="stats-chart"></canvas></div>
     {% else %}
-    <p class="text-sm text-gray-500 italic text-center py-10">Chart appears after more snapshots are collected.</p>
+    <p class="text-xs text-gray-600 italic text-center py-10 font-mono uppercase tracking-wider">CHART APPEARS AFTER MORE SNAPSHOTS ARE COLLECTED.</p>
     {% endif %}
   </div>
 </section>
@@ -225,30 +264,31 @@
 <!-- Session History -->
 {% if sessions %}
 <section class="mb-8">
-  <h2 class="text-lg font-semibold text-white mb-4">Session History
-    <span class="text-sm font-normal text-gray-500 ml-1">({{ sessions | length }})</span>
-  </h2>
-  <div class="bg-ow-card border border-ow-border rounded-xl overflow-x-auto">
+  <div class="hud-section-header">
+    <h2>⏱ Session History</h2>
+    <span class="text-xs font-mono text-gray-600">({{ sessions | length }})</span>
+  </div>
+  <div class="overflow-x-auto" style="background:#111111;border:1px solid #272727;">
     <table class="w-full text-sm">
-      <thead class="bg-ow-border text-gray-400 text-xs uppercase">
+      <thead class="text-gray-600 text-xs uppercase font-mono" style="background:#1a1a1a;">
         <tr>
-          <th class="px-4 py-3 text-left">Date</th>
-          <th class="px-4 py-3 text-right">Duration</th>
-          <th class="px-4 py-3 text-right">Kills</th>
-          <th class="px-4 py-3 text-right">XP Gained</th>
+          <th class="px-4 py-3 text-left tracking-wider">Date</th>
+          <th class="px-4 py-3 text-right tracking-wider">Duration</th>
+          <th class="px-4 py-3 text-right tracking-wider">Kills</th>
+          <th class="px-4 py-3 text-right tracking-wider">XP Gained</th>
         </tr>
       </thead>
-      <tbody class="divide-y divide-ow-border">
+      <tbody class="divide-y divide-[#1a1a1a]">
         {% for sess in sessions %}
-        <tr class="hover:bg-ow-border/40 transition-colors {% if loop.first %}bg-ow-border/30{% endif %}">
-          <td class="px-4 py-3 text-gray-400 whitespace-nowrap">
-            {{ sess.start }}{% if loop.first %} <span class="ml-1 text-hll-indigo text-xs">latest</span>{% endif %}
+        <tr class="transition-colors {% if loop.first %}bg-[#141414]{% endif %}">
+          <td class="px-4 py-3 text-gray-400 whitespace-nowrap font-mono text-xs">
+            {{ sess.start }}{% if loop.first %} <span class="ml-1 text-hll-bright text-xs">LATEST</span>{% endif %}
           </td>
-          <td class="px-4 py-3 text-right text-gray-300">{{ sess.duration }}</td>
-          <td class="px-4 py-3 text-right {% if sess.kills_delta is not none %}text-gray-200{% else %}text-gray-600{% endif %}">
+          <td class="px-4 py-3 text-right text-gray-300 font-mono text-xs">{{ sess.duration }}</td>
+          <td class="px-4 py-3 text-right font-mono text-xs {% if sess.kills_delta is not none and sess.kills_delta > 0 %}text-green-400{% else %}text-gray-600{% endif %}">
             {% if sess.kills_delta is not none %}+{{ "{:,}".format(sess.kills_delta) }}{% else %}—{% endif %}
           </td>
-          <td class="px-4 py-3 text-right {% if sess.xp_delta is not none %}text-gray-400{% else %}text-gray-600{% endif %}">
+          <td class="px-4 py-3 text-right font-mono text-xs {% if sess.xp_delta is not none %}text-gray-400{% else %}text-gray-600{% endif %}">
             {% if sess.xp_delta is not none %}
               {% if sess.xp_delta >= 1000 %}+{{ "%.1f"|format(sess.xp_delta / 1000) }}k{% else %}+{{ sess.xp_delta }}{% endif %}
             {% else %}—{% endif %}
@@ -264,39 +304,41 @@
 <!-- Snapshot History (collapsible) -->
 <section>
   <div class="flex items-center justify-between mb-3">
-    <h2 class="text-lg font-semibold text-white">Snapshot History
-      <span class="text-sm font-normal text-gray-500 ml-1">({{ snapshots | length }})</span>
-    </h2>
+    <div class="hud-section-header mb-0">
+      <h2>🗂 Snapshot History</h2>
+      <span class="text-xs font-mono text-gray-600">({{ snapshots | length }})</span>
+    </div>
     <button id="history-toggle" onclick="toggleHistory()"
-      class="text-xs text-ow-blue hover:text-blue-300 px-2 py-1 rounded border border-ow-border">▼ Show</button>
+      style="background:#0a0a0a;border:1px solid #272727;"
+      class="text-[10px] text-gray-600 hover:text-gray-300 px-2 py-1 uppercase tracking-wider transition-colors">▼ SHOW</button>
   </div>
   <div id="history-table" class="hidden">
-    <div class="bg-ow-card border border-ow-border rounded-xl overflow-x-auto">
+    <div class="overflow-x-auto" style="background:#111111;border:1px solid #272727;">
       <table class="w-full text-sm">
-        <thead class="bg-ow-border text-gray-400 text-xs uppercase">
+        <thead class="text-gray-600 text-xs uppercase font-mono" style="background:#1a1a1a;">
           <tr>
-            <th class="px-4 py-3 text-left">Fetched</th>
-            <th class="px-4 py-3 text-right">Kills</th>
-            <th class="px-4 py-3 text-right">HS%</th>
-            <th class="px-4 py-3 text-right">K/hr</th>
-            <th class="px-4 py-3 text-right">Playtime</th>
+            <th class="px-4 py-3 text-left tracking-wider">Fetched</th>
+            <th class="px-4 py-3 text-right tracking-wider">Kills</th>
+            <th class="px-4 py-3 text-right tracking-wider">HS%</th>
+            <th class="px-4 py-3 text-right tracking-wider">K/hr</th>
+            <th class="px-4 py-3 text-right tracking-wider">Playtime</th>
           </tr>
         </thead>
-        <tbody class="divide-y divide-ow-border">
+        <tbody class="divide-y divide-[#1a1a1a]">
           {% for snap in snapshots %}
           {% set sgd = snap.game_data or {} %}
           {% set sk = sgd.get('kills') %}
           {% set sh = sgd.get('headshots') %}
           {% set spt = sgd.get('playtime_forever') %}
           {% set skph = ((sk / (spt / 60)) | round(1)) if (sk and spt and spt > 0) else none %}
-          <tr class="hover:bg-ow-border/40 {% if loop.first %}bg-ow-border/30{% endif %}">
-            <td class="px-4 py-3 text-gray-400 whitespace-nowrap">
-              {{ snap.fetched_at | localdt }}{% if loop.first %} <span class="ml-1 text-hll-indigo text-xs">latest</span>{% endif %}
+          <tr class="{% if loop.first %}bg-[#141414]{% endif %}">
+            <td class="px-4 py-3 text-gray-400 whitespace-nowrap font-mono text-xs">
+              {{ snap.fetched_at | localdt }}{% if loop.first %} <span class="ml-1 text-hll-bright text-xs">LATEST</span>{% endif %}
             </td>
-            <td class="px-4 py-3 text-right text-gray-300 tabular-nums">{% if sk is not none %}{{ "{:,}".format(sk) }}{% else %}—{% endif %}</td>
-            <td class="px-4 py-3 text-right text-gray-400">{% if sh is not none and sk %}{{ "%.1f"|format(sh / sk * 100) }}%{% else %}—{% endif %}</td>
-            <td class="px-4 py-3 text-right text-gray-400">{% if skph is not none %}{{ skph }}{% else %}—{% endif %}</td>
-            <td class="px-4 py-3 text-right text-gray-400">{% if spt is not none %}{{ spt // 60 }}h {{ spt % 60 }}m{% else %}—{% endif %}</td>
+            <td class="px-4 py-3 text-right text-gray-300 font-mono text-xs tabular-nums">{% if sk is not none %}{{ "{:,}".format(sk) }}{% else %}—{% endif %}</td>
+            <td class="px-4 py-3 text-right text-gray-400 font-mono text-xs">{% if sh is not none and sk %}{{ "%.1f"|format(sh / sk * 100) }}%{% else %}—{% endif %}</td>
+            <td class="px-4 py-3 text-right text-gray-400 font-mono text-xs">{% if skph is not none %}{{ skph }}{% else %}—{% endif %}</td>
+            <td class="px-4 py-3 text-right text-gray-400 font-mono text-xs">{% if spt is not none %}{{ spt // 60 }}h {{ spt % 60 }}m{% else %}—{% endif %}</td>
           </tr>
           {% endfor %}
         </tbody>
@@ -310,63 +352,30 @@
    ═══════════════════════════════════════════════════════════════ #}
 {% else %}
 
-<!-- Competitive Ranks -->
-<section class="mb-8">
-  <h2 class="text-lg font-semibold text-white mb-4">Competitive Ranks</h2>
-  <div class="flex flex-wrap gap-3">
-    {% for role, rank in [('Tank', latest.rank_tank), ('Damage', latest.rank_damage), ('Support', latest.rank_support), ('Open Queue', latest.rank_open)] %}
-    {% if rank %}
-    {% set tier = rank.split(' ')[0].lower() %}
-    <div class="bg-ow-card border rounded-xl px-5 py-3 text-center min-w-[110px]
-      {% if tier == 'champion' %}border-pink-700
-      {% elif tier == 'grandmaster' %}border-orange-700
-      {% elif tier == 'master' %}border-purple-700
-      {% elif tier == 'diamond' %}border-blue-700
-      {% elif tier == 'platinum' %}border-cyan-800
-      {% elif tier == 'gold' %}border-yellow-700
-      {% elif tier == 'silver' %}border-gray-600
-      {% elif tier == 'bronze' %}border-amber-800
-      {% else %}border-ow-border{% endif %}">
-      <p class="text-xs text-gray-500 mb-1">{{ role }}</p>
-      <p class="font-bold text-sm
-        {% if tier == 'champion' %}text-pink-400
-        {% elif tier == 'grandmaster' %}text-orange-400
-        {% elif tier == 'master' %}text-purple-400
-        {% elif tier == 'diamond' %}text-blue-400
-        {% elif tier == 'platinum' %}text-cyan-400
-        {% elif tier == 'gold' %}text-yellow-400
-        {% elif tier == 'silver' %}text-gray-300
-        {% elif tier == 'bronze' %}text-amber-500
-        {% else %}text-white{% endif %}">{{ rank }}</p>
-    </div>
-    {% endif %}
-    {% endfor %}
-    {% if not latest.rank_tank and not latest.rank_damage and not latest.rank_support and not latest.rank_open %}
-    <p class="text-gray-500 italic">Unranked this season</p>
-    {% endif %}
-  </div>
-</section>
-
 <!-- Career Stats overview -->
 <section class="mb-8">
-  <h2 class="text-lg font-semibold text-white mb-4">Career Stats</h2>
+  <div class="hud-section-header"><h2>⚔ Career Stats</h2></div>
   <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-4">
-    {% for label, value, extra in [
-        ('Win Rate', (("%.1f"|format(latest.win_rate * 100)) ~ '%') if latest.win_rate is not none else '—', none),
-        ('KDA',      ("%.2f"|format(latest.kda)) if latest.kda is not none else '—', none),
-        ('Games',    latest.games_played if latest.games_played is not none else '—',
-                     ((latest.games_won or 0) ~ 'W / ' ~ (latest.games_lost or 0) ~ 'L') if latest.games_played else none),
-        ('Win/Loss', (((latest.games_won or 0) ~ ' / ' ~ (latest.games_lost or 0)) if latest.games_played else '—'), none),
+    {% set wr_val = latest.win_rate %}
+    {% set wr_pct = (wr_val * 100) | round(1) if wr_val is not none else none %}
+    {% for label, value, color in [
+        ('Win Rate',
+         (("%.1f"|format(wr_pct)) ~ '%') if wr_pct is not none else '—',
+         'text-green-400 glow-green' if wr_pct is not none and wr_pct >= 55 else ('text-red-400 glow-red' if wr_pct is not none and wr_pct < 45 else 'text-ow-orange glow-orange')),
+        ('KDA',
+         ("%.2f"|format(latest.kda)) if latest.kda is not none else '—',
+         'text-ow-cyan glow-cyan' if latest.kda is not none and latest.kda >= 3.0 else ('text-red-400' if latest.kda is not none and latest.kda < 2.0 else 'text-gray-200')),
+        ('Games', latest.games_played if latest.games_played is not none else '—', 'text-gray-200'),
+        ('W / L', (((latest.games_won or 0) ~ 'W / ' ~ (latest.games_lost or 0) ~ 'L') if latest.games_played else '—'), 'text-gray-200'),
     ] %}
-    <div class="bg-ow-card border border-ow-border rounded-xl p-4 text-center">
-      <p class="text-2xl font-bold text-ow-orange">{{ value }}</p>
-      <p class="text-xs text-gray-500 mt-1 uppercase tracking-wide">{{ label }}</p>
-      {% if extra %}<p class="text-xs text-gray-600 mt-0.5">{{ extra }}</p>{% endif %}
+    <div class="p-4 text-center" style="background:#111111;border:1px solid #272727;">
+      <p class="text-2xl font-mono font-bold {{ color }}">{{ value }}</p>
+      <p class="text-xs font-mono text-gray-500 mt-1 uppercase tracking-wider">{{ label }}</p>
     </div>
     {% endfor %}
   </div>
 
-  {# Per-10-min stats from raw_stats #}
+  {# Per-10-min stats #}
   {% set _gen = (latest.raw_stats or {}).get('general', {}) %}
   {% set dmg10  = _gen.get('damage_per_10_min') %}
   {% set heal10 = _gen.get('healing_per_10_min') %}
@@ -374,21 +383,56 @@
   {% if elim10 is not none or dmg10 is not none or heal10 is not none %}
   <div class="flex flex-wrap gap-3">
     {% if elim10 is not none %}
-    <div class="bg-ow-card border border-ow-border rounded-lg px-4 py-2 text-center min-w-[110px]">
-      <p class="text-lg font-semibold text-gray-200">{{ "%.1f"|format(elim10) }}</p>
-      <p class="text-xs text-gray-500">Elims / 10 min</p>
+    <div class="px-4 py-2 text-center min-w-[110px]" style="background:#111111;border:1px solid #272727;">
+      <p class="text-lg font-mono font-semibold text-gray-200">{{ "%.1f"|format(elim10) }}</p>
+      <p class="text-xs font-mono text-gray-500 uppercase tracking-wider">Elims / 10m</p>
     </div>
     {% endif %}
     {% if dmg10 is not none %}
-    <div class="bg-ow-card border border-ow-border rounded-lg px-4 py-2 text-center min-w-[110px]">
-      <p class="text-lg font-semibold text-ow-orange">{{ dmg10 | int }}</p>
-      <p class="text-xs text-gray-500">Dmg / 10 min</p>
+    <div class="px-4 py-2 text-center min-w-[110px]" style="background:#111111;border:1px solid #272727;">
+      <p class="text-lg font-mono font-semibold text-ow-orange">{{ dmg10 | int }}</p>
+      <p class="text-xs font-mono text-gray-500 uppercase tracking-wider">Dmg / 10m</p>
     </div>
     {% endif %}
     {% if heal10 is not none %}
-    <div class="bg-ow-card border border-ow-border rounded-lg px-4 py-2 text-center min-w-[110px]">
-      <p class="text-lg font-semibold text-green-300">{{ heal10 | int }}</p>
-      <p class="text-xs text-gray-500">Heal / 10 min</p>
+    <div class="px-4 py-2 text-center min-w-[110px]" style="background:#111111;border:1px solid #272727;">
+      <p class="text-lg font-mono font-semibold text-green-400">{{ heal10 | int }}</p>
+      <p class="text-xs font-mono text-gray-500 uppercase tracking-wider">Heal / 10m</p>
+    </div>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  {# Career totals: match size and style of the main 4 stat tiles above #}
+  {% set _gt = (latest.raw_stats or {}).get('general', {}).get('total', {}) %}
+  {% set _ga = (latest.raw_stats or {}).get('general', {}).get('average', {}) %}
+  {% if _gt.get('eliminations') is not none or _gt.get('deaths') is not none %}
+  <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 mt-4">
+    {% if _gt.get('eliminations') is not none %}
+    <div class="p-4 text-center" style="background:#111111;border:1px solid #272727;">
+      <p class="text-2xl font-bold text-gray-200">{{ "{:,}".format(_gt.eliminations) }}</p>
+      <p class="text-xs text-gray-500 mt-1 uppercase tracking-wider">Total Elims</p>
+    </div>
+    {% endif %}
+    {% if _gt.get('deaths') is not none %}
+    <div class="p-4 text-center" style="background:#111111;border:1px solid #272727;">
+      <p class="text-2xl font-bold text-gray-200">{{ "{:,}".format(_gt.deaths) }}</p>
+      <p class="text-xs text-gray-500 mt-1 uppercase tracking-wider">Total Deaths</p>
+    </div>
+    {% endif %}
+    {% if _ga.get('deaths') is not none %}
+    <div class="p-4 text-center" style="background:#111111;border:1px solid #272727;">
+      <p class="text-2xl font-bold text-gray-200">{{ "%.1f"|format(_ga.deaths) }}</p>
+      <p class="text-xs text-gray-500 mt-1 uppercase tracking-wider">Deaths / Game</p>
+    </div>
+    {% endif %}
+    {% if _gt.get('damage') is not none %}
+    <div class="p-4 text-center" style="background:#111111;border:1px solid #272727;">
+      <p class="text-2xl font-bold text-ow-orange">
+        {% if _gt.damage >= 1000000 %}{{ "%.1f"|format(_gt.damage / 1000000) }}M
+        {% else %}{{ (_gt.damage // 1000) }}k{% endif %}
+      </p>
+      <p class="text-xs text-gray-500 mt-1 uppercase tracking-wider">Total Damage</p>
     </div>
     {% endif %}
   </div>
@@ -398,11 +442,11 @@
 <!-- Gamemode Tabs -->
 {% set gbm = latest.stats_by_gamemode or {} %}
 <div class="mb-6">
-  <div class="flex gap-1 border-b border-ow-border">
-    {% for key, label in [('all', 'All Modes'), ('competitive', 'Competitive'), ('quickplay', 'Quick Play')] %}
+  <div class="flex gap-1" style="border-bottom:1px solid #1e1e1e;">
+    {% for key, label in [('all', 'ALL MODES'), ('competitive', 'COMPETITIVE'), ('quickplay', 'QUICK PLAY')] %}
     <button onclick="switchTab('{{ key }}')" id="tab-{{ key }}"
-      class="px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px
-        {% if key == 'all' %}border-ow-orange text-ow-orange{% else %}border-transparent text-gray-400 hover:text-gray-200{% endif %}">
+      class="px-4 py-2 text-[10px] font-bold transition-colors -mb-px tracking-wider uppercase"
+      style="border-bottom:2px solid {% if key == 'all' %}#F99E1A{% else %}transparent{% endif %};color:{% if key == 'all' %}#F99E1A{% else %}#555{% endif %};">
       {{ label }}
     </button>
     {% endfor %}
@@ -413,64 +457,104 @@
   {% if gbm.competitive and gbm.competitive.games_played %}
     {% set s = gbm.competitive %}{% include "partials/stats_panel.html" %}
   {% else %}
-    <p class="text-gray-500 italic">No competitive data in this snapshot.</p>
+    <p class="text-gray-600 italic font-mono text-xs uppercase tracking-wider">NO COMPETITIVE DATA IN THIS SNAPSHOT.</p>
   {% endif %}
 </div>
 <div id="panel-quickplay" class="hidden mb-8">
   {% if gbm.quickplay and gbm.quickplay.games_played %}
     {% set s = gbm.quickplay %}{% include "partials/stats_panel.html" %}
   {% else %}
-    <p class="text-gray-500 italic">No quick play data in this snapshot.</p>
+    <p class="text-gray-600 italic font-mono text-xs uppercase tracking-wider">NO QUICK PLAY DATA IN THIS SNAPSHOT.</p>
   {% endif %}
 </div>
 
-<!-- Performance by Role -->
-{% if role_stats %}
+<!-- Performance by Role (from raw_stats.roles — exact game counts, not estimated) -->
+{% set _raw_roles = (latest.raw_stats or {}).get('roles', {}) %}
+{% if _raw_roles %}
 <section class="mb-8">
-  <h2 class="text-lg font-semibold text-white mb-4">Performance by Role</h2>
-  <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
-    {% for r in role_stats %}
-    <div class="bg-ow-card border border-ow-border rounded-xl p-4">
-      <div class="flex items-center justify-between mb-3">
-        <span class="text-sm font-bold uppercase tracking-wide
-          {% if r.role_key == 'tank' %}text-blue-400{% elif r.role_key == 'damage' %}text-red-400{% else %}text-green-400{% endif %}">
-          {% if r.role_key == 'tank' %}🛡 {% elif r.role_key == 'damage' %}⚔ {% else %}💚 {% endif %}{{ r.role }}
-        </span>
-        <span class="text-xs text-gray-500">{{ r.time_played // 3600 }}h {{ (r.time_played % 3600) // 60 }}m</span>
-      </div>
-      <div class="space-y-2 text-sm">
-        {% for label, val, color in [
-            ('KDA', r.kda, 'text-white'),
-            ('Win Rate', (("%.1f"|format(r.win_rate)) ~ '%') if r.win_rate is not none else none, 'text-green-400' if r.win_rate is not none and r.win_rate >= 55 else ('text-red-400' if r.win_rate is not none and r.win_rate < 45 else 'text-gray-200')),
-            ('Elims/10m', r.elims_per_10_min, 'text-white'),
-            ('Dmg/10m',  r.damage_per_10_min, 'text-ow-orange'),
-            ('Heal/10m', r.healing_per_10_min, 'text-green-300'),
-        ] %}
-        {% if val is not none %}
-        <div class="flex justify-between items-center">
-          <span class="text-gray-400">{{ label }}</span>
-          <span class="font-semibold {{ color }}">{{ val }}</span>
-        </div>
-        {% endif %}
-        {% endfor %}
-      </div>
+  <div class="hud-section-header"><h2>🛡 Performance by Role</h2></div>
+  <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+  {% for rkey, remoji, rlabel, rcolor in [('tank','🛡','TANK','#60a5fa'),('damage','⚔','DAMAGE','#f87171'),('support','💚','SUPPORT','#4ade80')] %}
+  {% set r = _raw_roles.get(rkey, {}) %}
+  {% if r and r.get('games_played') %}
+  {% set r_gp  = r.games_played %}
+  {% set r_gw  = r.get('games_won', 0) %}
+  {% set r_gl  = r.get('games_lost', 0) %}
+  {% set r_wr  = r.get('winrate') %}
+  {% set r_kda = r.get('kda') %}
+  {% set r_tp  = r.get('time_played', 0) %}
+  {% set r_avg = r.get('average', {}) %}
+  <div class="p-4" style="background:#111111;border:1px solid #272727;border-left:3px solid {{ rcolor }};">
+    <!-- Header -->
+    <div class="flex items-center justify-between mb-2">
+      <span class="text-sm font-bold uppercase tracking-wider" style="color:{{ rcolor }};">{{ remoji }} {{ rlabel }}</span>
+      <span class="text-[10px] text-gray-600">{{ r_tp // 3600 }}h {{ (r_tp % 3600) // 60 }}m</span>
     </div>
-    {% endfor %}
+    <!-- Record -->
+    <div class="mb-3" style="padding-bottom:10px;border-bottom:1px solid #1e1e1e;">
+      <div class="text-xs text-gray-400 mb-1">
+        <span class="font-bold text-white">{{ r_gp }}</span> games
+        <span class="ml-2 text-[#44ff88]">{{ r_gw }}W</span>
+        <span class="text-gray-700 mx-0.5">/</span>
+        <span class="text-red-400">{{ r_gl }}L</span>
+      </div>
+      {% if r_wr is not none %}
+      <span class="text-xl font-bold {% if r_wr >= 55 %}text-[#44ff88] glow-green{% elif r_wr < 45 %}text-red-400{% else %}text-ow-orange glow-orange{% endif %}">
+        {{ "%.1f"|format(r_wr) }}%
+      </span>
+      {% endif %}
+    </div>
+    <!-- Stats -->
+    <div class="space-y-1.5">
+      {% if r_kda is not none %}
+      <div class="flex justify-between text-xs">
+        <span class="text-gray-600 uppercase tracking-wider">KDA</span>
+        <span class="font-bold {% if r_kda >= 3.0 %}text-ow-cyan glow-cyan{% elif r_kda < 2.0 %}text-red-400{% else %}text-gray-200{% endif %}">{{ "%.2f"|format(r_kda) }}</span>
+      </div>
+      {% endif %}
+      {% if r_avg.get('deaths') is not none %}
+      <div class="flex justify-between text-xs">
+        <span class="text-gray-600 uppercase tracking-wider">Deaths/gm</span>
+        <span class="font-bold text-gray-300">{{ "%.1f"|format(r_avg.deaths) }}</span>
+      </div>
+      {% endif %}
+      {% if r_avg.get('eliminations') is not none %}
+      <div class="flex justify-between text-xs">
+        <span class="text-gray-600 uppercase tracking-wider">Elims/gm</span>
+        <span class="font-bold text-gray-300">{{ "%.1f"|format(r_avg.eliminations) }}</span>
+      </div>
+      {% endif %}
+      {% if r_avg.get('damage') is not none %}
+      <div class="flex justify-between text-xs">
+        <span class="text-gray-600 uppercase tracking-wider">Dmg/gm</span>
+        <span class="font-bold text-ow-orange">{{ "{:,.0f}".format(r_avg.damage) }}</span>
+      </div>
+      {% endif %}
+      {% if r_avg.get('healing') is not none and r_avg.healing > 0 %}
+      <div class="flex justify-between text-xs">
+        <span class="text-gray-600 uppercase tracking-wider">Heal/gm</span>
+        <span class="font-bold text-[#4ade80]">{{ "{:,.0f}".format(r_avg.healing) }}</span>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
+  {% endfor %}
   </div>
 </section>
 {% endif %}
 
 <!-- Stats Over Time Chart -->
 <section class="mb-8">
-  <div class="bg-ow-card border border-ow-border rounded-xl p-4">
+  <div class="p-4" style="background:#111111;border:1px solid #272727;">
     <div class="flex items-center justify-between mb-4">
-      <h2 class="text-lg font-semibold text-white">Stats Over Time</h2>
+      <div class="hud-section-header mb-0"><h2>📈 Stats Over Time</h2></div>
       {% if snapshots | length >= 2 %}
       <div class="flex gap-1" id="chart-filters">
-        {% for label, val in [('7d','7'),('30d','30'),('90d','90'),('All','')] %}
+        {% for label, val in [('7D','7'),('30D','30'),('90D','90'),('ALL','')] %}
         <button data-days="{{ val }}" onclick="filterChart({{ val if val else 'null' }})"
-          class="text-xs px-2.5 py-1 rounded border transition-colors
-            {% if loop.last %}border-ow-orange text-ow-orange{% else %}border-transparent text-gray-500 hover:text-gray-200{% endif %}">
+          class="text-[10px] px-2.5 py-1 uppercase tracking-wider border transition-colors"
+          style="border-color:{% if loop.last %}#F99E1A{% else %}transparent{% endif %};color:{% if loop.last %}#F99E1A{% else %}#555{% endif %};">
           {{ label }}
         </button>
         {% endfor %}
@@ -480,7 +564,7 @@
     {% if snapshots | length >= 2 %}
     <div style="position:relative;height:300px"><canvas id="stats-chart"></canvas></div>
     {% else %}
-    <p class="text-sm text-gray-500 italic text-center py-10">Chart appears after more snapshots are collected.</p>
+    <p class="text-xs text-gray-600 italic text-center py-10 font-mono uppercase tracking-wider">CHART APPEARS AFTER MORE SNAPSHOTS ARE COLLECTED.</p>
     {% endif %}
   </div>
 </section>
@@ -488,40 +572,41 @@
 <!-- Session History -->
 {% if sessions %}
 <section class="mb-8">
-  <h2 class="text-lg font-semibold text-white mb-4">Session History
-    <span class="text-sm font-normal text-gray-500 ml-1">({{ sessions | length }})</span>
-  </h2>
-  <div class="bg-ow-card border border-ow-border rounded-xl overflow-x-auto">
+  <div class="hud-section-header">
+    <h2>⚡ Session History</h2>
+    <span class="text-xs font-mono text-gray-600">({{ sessions | length }})</span>
+  </div>
+  <div class="overflow-x-auto" style="background:#111111;border:1px solid #272727;">
     <table class="w-full text-sm">
-      <thead class="bg-ow-border text-gray-400 text-xs uppercase">
+      <thead class="text-gray-600 text-xs uppercase font-mono" style="background:#1a1a1a;">
         <tr>
-          <th class="px-4 py-3 text-left">Date</th>
-          <th class="px-4 py-3 text-right">Games</th>
-          <th class="px-4 py-3 text-right">W / L</th>
-          <th class="px-4 py-3 text-right">Session WR</th>
-          <th class="px-4 py-3 text-right">KDA Δ</th>
+          <th class="px-4 py-3 text-left tracking-wider">Date</th>
+          <th class="px-4 py-3 text-right tracking-wider">Games</th>
+          <th class="px-4 py-3 text-right tracking-wider">W / L</th>
+          <th class="px-4 py-3 text-right tracking-wider">Session WR</th>
+          <th class="px-4 py-3 text-right tracking-wider">KDA Δ</th>
         </tr>
       </thead>
-      <tbody class="divide-y divide-ow-border">
+      <tbody class="divide-y divide-[#1a1a1a]">
         {% for sess in sessions %}
-        <tr class="hover:bg-ow-border/40 transition-colors {% if loop.first %}bg-ow-border/30{% endif %}">
-          <td class="px-4 py-3 text-gray-400 whitespace-nowrap">
-            {{ sess.start }}{% if loop.first %} <span class="ml-1 text-ow-orange text-xs">latest</span>{% endif %}
+        <tr class="transition-colors {% if loop.first %}bg-[#141414]{% endif %}">
+          <td class="px-4 py-3 text-gray-400 whitespace-nowrap font-mono text-xs">
+            {{ sess.start }}{% if loop.first %} <span class="ml-1 text-ow-orange text-xs">LATEST</span>{% endif %}
           </td>
-          <td class="px-4 py-3 text-right text-gray-300">{{ sess.games }}</td>
-          <td class="px-4 py-3 text-right">
+          <td class="px-4 py-3 text-right text-gray-300 font-mono text-xs">{{ sess.games }}</td>
+          <td class="px-4 py-3 text-right font-mono text-xs">
             <span class="text-green-400">{{ sess.wins }}W</span>
             <span class="text-gray-600 mx-0.5">/</span>
             <span class="text-red-400">{{ sess.losses }}L</span>
           </td>
-          <td class="px-4 py-3 text-right font-semibold
-            {% if sess.win_rate >= 55 %}text-green-400{% elif sess.win_rate < 45 %}text-red-400{% else %}text-gray-300{% endif %}">
+          <td class="px-4 py-3 text-right font-mono font-bold text-xs
+            {% if sess.win_rate >= 55 %}text-green-400 glow-green{% elif sess.win_rate < 45 %}text-red-400{% else %}text-gray-300{% endif %}">
             {{ sess.win_rate }}%
           </td>
-          <td class="px-4 py-3 text-right
+          <td class="px-4 py-3 text-right font-mono text-xs
             {% if sess.kda_delta is not none and sess.kda_delta > 0 %}text-green-400
             {% elif sess.kda_delta is not none and sess.kda_delta < 0 %}text-red-400
-            {% else %}text-gray-500{% endif %}">
+            {% else %}text-gray-600{% endif %}">
             {% if sess.kda_delta is not none %}{% if sess.kda_delta > 0 %}+{% endif %}{{ sess.kda_delta }}{% else %}—{% endif %}
           </td>
         </tr>
@@ -532,46 +617,92 @@
 </section>
 {% endif %}
 
+<!-- Rank History -->
+{% if rank_history is defined and rank_history | length > 1 %}
+<section class="mb-8">
+  <div class="hud-section-header">
+    <h2>📊 Rank History</h2>
+    <span class="text-[10px] text-gray-600">({{ rank_history | length }} distinct states tracked)</span>
+  </div>
+  <div class="overflow-x-auto" style="background:#111111;border:1px solid #272727;">
+    <table class="w-full text-xs">
+      <thead style="background:#1a1a1a;">
+        <tr>
+          <th class="px-4 py-2.5 text-left text-gray-600 uppercase tracking-wider font-bold">Date</th>
+          <th class="px-4 py-2.5 text-center text-gray-600 uppercase tracking-wider font-bold">Tank</th>
+          <th class="px-4 py-2.5 text-center text-gray-600 uppercase tracking-wider font-bold">Damage</th>
+          <th class="px-4 py-2.5 text-center text-gray-600 uppercase tracking-wider font-bold">Support</th>
+          <th class="px-4 py-2.5 text-center text-gray-600 uppercase tracking-wider font-bold">Open Q</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-[#1a1a1a]">
+      {% for entry in rank_history %}
+        <tr class="{% if loop.first %}bg-[#141414]{% endif %}">
+          <td class="px-4 py-2.5 text-gray-500">{{ entry.fetched_at | localdt("%b %d, %Y") }}</td>
+          {% for rank in [entry.rank_tank, entry.rank_damage, entry.rank_support, entry.rank_open] %}
+          {% if rank %}
+          {% set tier = rank.split(' ')[0].lower() %}
+          <td class="px-4 py-2.5 text-center font-bold"
+            style="color:{% if tier == 'champion' %}#f472b6{% elif tier == 'grandmaster' %}#fb923c{% elif tier == 'master' %}#c084fc{% elif tier == 'diamond' %}#60a5fa{% elif tier == 'platinum' %}#22d3ee{% elif tier == 'gold' %}#facc15{% elif tier == 'silver' %}#9ca3af{% elif tier == 'bronze' %}#fbbf24{% else %}#888{% endif %};">
+            {{ rank }}
+          </td>
+          {% else %}
+          <td class="px-4 py-2.5 text-center text-gray-700">—</td>
+          {% endif %}
+          {% endfor %}
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endif %}
+
 <!-- Snapshot History (collapsible) -->
 <section>
   <div class="flex items-center justify-between mb-3">
-    <h2 class="text-lg font-semibold text-white">Snapshot History
-      <span class="text-sm font-normal text-gray-500 ml-1">({{ snapshots | length }})</span>
-    </h2>
+    <div class="hud-section-header mb-0">
+      <h2>🗂 Snapshot History</h2>
+      <span class="text-xs font-mono text-gray-600">({{ snapshots | length }})</span>
+    </div>
     <button id="history-toggle" onclick="toggleHistory()"
-      class="text-xs text-ow-blue hover:text-blue-300 px-2 py-1 rounded border border-ow-border">▼ Show</button>
+      style="background:#0a0a0a;border:1px solid #272727;"
+      class="text-[10px] text-gray-600 hover:text-gray-300 px-2 py-1 uppercase tracking-wider transition-colors">▼ SHOW</button>
   </div>
   <div id="history-table" class="hidden">
-    <div class="bg-ow-card border border-ow-border rounded-xl overflow-x-auto">
+    <div class="overflow-x-auto" style="background:#111111;border:1px solid #272727;">
       <table class="w-full text-sm">
-        <thead class="bg-ow-border text-gray-400 text-xs uppercase">
+        <thead class="text-gray-600 text-xs uppercase font-mono" style="background:#1a1a1a;">
           <tr>
-            <th class="px-4 py-3 text-left">Fetched</th>
-            <th class="px-4 py-3 text-right">Games</th>
-            <th class="px-4 py-3 text-right">Win Rate</th>
-            <th class="px-4 py-3 text-right">KDA</th>
-            <th class="px-4 py-3 text-left">Ranks</th>
+            <th class="px-4 py-3 text-left tracking-wider">Fetched</th>
+            <th class="px-4 py-3 text-right tracking-wider">Games</th>
+            <th class="px-4 py-3 text-right tracking-wider">Win Rate</th>
+            <th class="px-4 py-3 text-right tracking-wider">KDA</th>
+            <th class="px-4 py-3 text-left tracking-wider">Ranks</th>
           </tr>
         </thead>
-        <tbody class="divide-y divide-ow-border">
+        <tbody class="divide-y divide-[#1a1a1a]">
           {% for snap in snapshots %}
-          <tr class="hover:bg-ow-border/40 {% if loop.first %}bg-ow-border/30{% endif %}">
-            <td class="px-4 py-3 text-gray-400 whitespace-nowrap">
-              {{ snap.fetched_at | localdt }}{% if loop.first %} <span class="ml-1 text-ow-orange text-xs">latest</span>{% endif %}
+          <tr class="{% if loop.first %}bg-[#141414]{% endif %}">
+            <td class="px-4 py-3 text-gray-400 whitespace-nowrap font-mono text-xs">
+              {{ snap.fetched_at | localdt }}{% if loop.first %} <span class="ml-1 text-ow-orange text-xs">LATEST</span>{% endif %}
             </td>
-            <td class="px-4 py-3 text-right text-gray-300">{{ snap.games_played or '—' }}</td>
-            <td class="px-4 py-3 text-right {% if snap.win_rate is not none and snap.win_rate >= 0.55 %}text-green-400{% elif snap.win_rate is not none and snap.win_rate < 0.45 %}text-red-400{% else %}text-gray-400{% endif %}">
+            <td class="px-4 py-3 text-right text-gray-300 font-mono text-xs">{{ snap.games_played or '—' }}</td>
+            <td class="px-4 py-3 text-right font-mono font-bold text-xs
+              {% if snap.win_rate is not none and snap.win_rate >= 0.55 %}text-green-400
+              {% elif snap.win_rate is not none and snap.win_rate < 0.45 %}text-red-400
+              {% else %}text-gray-400{% endif %}">
               {% if snap.win_rate is not none %}{{ "%.1f"|format(snap.win_rate * 100) }}%{% else %}—{% endif %}
             </td>
-            <td class="px-4 py-3 text-right text-gray-400">
+            <td class="px-4 py-3 text-right text-gray-400 font-mono text-xs">
               {% if snap.kda is not none %}{{ "%.2f"|format(snap.kda) }}{% else %}—{% endif %}
             </td>
-            <td class="px-4 py-3 text-xs text-gray-500">
+            <td class="px-4 py-3 text-xs text-gray-600 font-mono">
               {% set ranks = [] %}
               {% if snap.rank_tank %}{% set _ = ranks.append('T:' ~ snap.rank_tank) %}{% endif %}
               {% if snap.rank_damage %}{% set _ = ranks.append('D:' ~ snap.rank_damage) %}{% endif %}
               {% if snap.rank_support %}{% set _ = ranks.append('S:' ~ snap.rank_support) %}{% endif %}
-              {{ ranks | join(' · ') or 'Unranked' }}
+              {{ ranks | join(' · ') or 'UNRANKED' }}
             </td>
           </tr>
           {% endfor %}
