@@ -1,6 +1,6 @@
 # ow-stats
 
-[![Docker Image](https://github.com/bennerrrr/ow-stats/actions/workflows/docker-image.yml/badge.svg)](https://github.com/bennerrrr/ow-stats/actions/workflows/docker-image.yml) [![Dependency Graph](https://github.com/bennerrrr/ow-stats/actions/workflows/dependabot/update-graph/badge.svg)](https://github.com/bennerrrr/ow-stats/actions/workflows/dependabot/update-graph)
+[![Docker Image](https://github.com/bennerrrr/ow-stats/actions/workflows/docker-image.yml/badge.svg)](https://github.com/bennerrrr/ow-stats/actions/workflows/docker-image.yml) [![Latest release](https://img.shields.io/github/v/release/bennerrrr/ow-stats)](https://github.com/bennerrrr/ow-stats/releases) [![Last commit](https://img.shields.io/github/last-commit/bennerrrr/ow-stats)](https://github.com/bennerrrr/ow-stats/commits/main)
 
 A self-hosted stats tracker for **Overwatch 2** and **Hell Let Loose**. Periodically polls player data from public APIs, stores historical snapshots in SQLite, and serves a web dashboard with charts. Optionally pushes session summaries and rank-change alerts to Discord.
 
