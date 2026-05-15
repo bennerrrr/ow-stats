@@ -2,6 +2,7 @@ import asyncio
 import json
 import os
 from datetime import datetime, timezone, timedelta
+from urllib.parse import quote
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from fastapi import APIRouter, Depends, Request, Form, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -512,4 +513,4 @@ async def refresh_player(battletag: str, request: Request, db: AsyncSession = De
             "partials/player_live.html", {"request": request, **ctx}
         )
 
-    return RedirectResponse(f"/players/{battletag.replace('#', '%23')}", status_code=303)
+    return RedirectResponse(f"/players/{quote(battletag, safe='')}", status_code=303)
