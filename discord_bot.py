@@ -20,6 +20,13 @@ logger = logging.getLogger(__name__)
 def _slog(value: str) -> str:
     return str(value).replace("\n", " ").replace("\r", " ")
 
+
+def _safe_avatar_url(url: str | None) -> str | None:
+    if url and url.startswith("https://") and len(url) <= 500:
+        return url
+    return None
+
+
 OW_COLOR  = 0xF99E1A
 HLL_COLOR = 0x5C6BC0  # muted indigo — military feel
 WIN_COLOR  = 0x57F287
@@ -1000,7 +1007,7 @@ async def _add_ow_player(interaction: discord.Interaction, battletag: str) -> No
         return
 
     async with AsyncSessionLocal() as session:
-        player = Player(battletag=battletag, game="overwatch", display_name=data.username, avatar_url=data.avatar)
+        player = Player(battletag=battletag, game="overwatch", display_name=data.username, avatar_url=_safe_avatar_url(data.avatar))
         session.add(player)
         await session.flush()
 
@@ -1070,13 +1077,25 @@ async def _add_hll_player(interaction: discord.Interaction, steam_id: str) -> No
         return
 
     async with AsyncSessionLocal() as session:
-        player = Player(battletag=steam_id, game="hell_let_loose", display_name=data.display_name, avatar_url=data.avatar)
+        player = Player(battletag=steam_id, game="hell_let_loose", display_name=data.display_name, avatar_url=_safe_avatar_url(data.avatar))
         session.add(player)
         await session.flush()
 
         game_data = {
             "playtime_forever": data.playtime_forever,
-            "playtime_2weeks": data.playtime_2weeks,
+            "playtime_2weeks":  data.playtime_2weeks,
+            "kills":            data.kills,
+            "headshots":        data.headshots,
+            "tank_kills":       data.tank_kills,
+            "vehicle_kills":    data.vehicle_kills,
+            "artillery_kills":  data.artillery_kills,
+            "sector_caps":      data.sector_caps,
+            "ammo_drops":       data.ammo_drops,
+            "supply_drops":     data.supply_drops,
+            "commendations":    data.commendations,
+            "total_xp":         data.total_xp,
+            "top_role":         data.top_role,
+            "role_xp":          data.role_xp,
         }
         snapshot = StatSnapshot(
             player_id=player.id,
@@ -1155,7 +1174,7 @@ async def cmd_stats(interaction: discord.Interaction, player_id: str):
             await interaction.followup.send(f"API error for `{player_id}`: {e}", ephemeral=True)
             return
 
-        temp_player = Player(battletag=player_id, game="overwatch", display_name=data.username, avatar_url=data.avatar)
+        temp_player = Player(battletag=player_id, game="overwatch", display_name=data.username, avatar_url=_safe_avatar_url(data.avatar))
         temp_snapshot = StatSnapshot(
             player_id=0,
             fetched_at=datetime.now(timezone.utc),
