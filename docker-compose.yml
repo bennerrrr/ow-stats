@@ -1,6 +1,6 @@
 services:
   web:
-    image: ghcr.io/bennerrrr/ow-stats:latest
+    image: ghcr.io/bennerrrr/ow-stats:1.3.4
     ports:
       - "8000:8000"
     volumes:
