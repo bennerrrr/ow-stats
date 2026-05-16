@@ -83,13 +83,13 @@
       </div>
       <!-- Status indicator -->
       {% if freshness %}
-      <div class="flex items-center gap-1.5 shrink-0">
+      <div class="flex items-center justify-center gap-1.5 shrink-0 self-center leading-none">
         {% if freshness == 'LIVE' %}
-        <span class="w-1.5 h-1.5 rounded-full bg-[#44ff88] status-live"></span>
-        <span class="text-[10px] text-[#44ff88] uppercase tracking-wider">LIVE</span>
+        <span class="w-1.5 h-1.5 rounded-full bg-[#44ff88] status-live mt-[1px]"></span>
+        <span class="text-[10px] text-[#44ff88] uppercase tracking-wider leading-none">LIVE</span>
         {% else %}
-        <span class="w-1.5 h-1.5 rounded-full bg-gray-700"></span>
-        <span class="text-[10px] text-gray-600 uppercase tracking-wider">{{ freshness }}</span>
+        <span class="w-1.5 h-1.5 rounded-full bg-gray-700 mt-[1px]"></span>
+        <span class="text-[10px] text-gray-600 uppercase tracking-wider leading-none">{{ freshness }}</span>
         {% endif %}
       </div>
       {% endif %}
