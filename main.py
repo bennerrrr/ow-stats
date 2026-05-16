@@ -5,8 +5,11 @@ from contextlib import asynccontextmanager
 
 from dotenv import load_dotenv
 from fastapi import FastAPI
+from fastapi.responses import Response
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import select
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request as StarletteRequest
 
 load_dotenv()
 
@@ -19,6 +22,16 @@ from scheduler import start_scheduler, stop_scheduler, poll_all_players
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s — %(message)s")
 logger = logging.getLogger(__name__)
+
+
+class _SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: StarletteRequest, call_next):
+        response: Response = await call_next(request)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["Referrer-Policy"] = "same-origin"
+        response.headers["X-XSS-Protection"] = "1; mode=block"
+        return response
 
 
 async def seed_players() -> None:
@@ -63,6 +76,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="OW Stats", lifespan=lifespan)
+app.add_middleware(_SecurityHeadersMiddleware)
 app.mount("/static", StaticFiles(directory="static"), name="static")
 app.include_router(router)
 app.include_router(utils_router)

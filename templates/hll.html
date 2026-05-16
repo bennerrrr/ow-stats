@@ -19,6 +19,7 @@
   class="mb-5 px-4 py-3 text-xs">
   {% if error == 'hll_private' %}⚠ STEAM PROFILE PRIVATE — set Steam profile and Game details to Public.
   {% elif error == 'hll_not_found' %}⚠ STEAM ID NOT FOUND — use the 17-digit Steam64 ID.
+  {% elif error == 'invalid_steam_id' %}⚠ INVALID STEAM ID — must be a 17-digit numeric Steam64 ID.
   {% elif error == 'already_tracked' %}⚠ ALREADY TRACKED — that operator is already in the system.
   {% else %}⚠ API ERROR — try again in a moment.{% endif %}
 </div>
