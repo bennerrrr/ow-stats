@@ -17,7 +17,7 @@ from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database import DATABASE_URL, AsyncSessionLocal, engine, get_db
-from discord_bot import bot, _get_setting, _set_setting
+from discord_bot import bot, _get_setting, _set_setting, send_preview_dm
 from models import DiscordChannel, Player, Setting
 from scheduler import poll_all_players, scheduler
 from _templates import templates
@@ -217,6 +217,7 @@ async def discord_channels(
             "channel_id": ch.channel_id,
             "channel_name": ch.channel_name,
             "game": ch.game,
+            "muted": ch.muted,
             "added_at": ch.added_at.isoformat(),
         })
     return JSONResponse({"guilds": [{"guild_id": g, "channels": chs} for g, chs in guilds.items()]})
@@ -265,6 +266,22 @@ async def preview_discord_channel(
     return JSONResponse({"ok": True})
 
 
+@router.patch("/discord/channels/{channel_id}/mute")
+async def mute_discord_channel(
+    channel_id: str,
+    muted: bool = Query(...),
+    _: None = Depends(_require_token),
+    db: AsyncSession = Depends(get_db),
+) -> JSONResponse:
+    result = await db.execute(select(DiscordChannel).where(DiscordChannel.channel_id == channel_id))
+    ch = result.scalar_one_or_none()
+    if not ch:
+        raise HTTPException(404, "Channel not registered")
+    ch.muted = muted
+    await db.commit()
+    return JSONResponse({"ok": True, "muted": muted})
+
+
 @router.get("/discord/invite")
 async def discord_invite(_: None = Depends(_require_token)) -> JSONResponse:
     if not bot.is_ready():
@@ -310,6 +327,14 @@ async def set_dm_user(
 @router.delete("/discord/dm")
 async def clear_dm_user(_: None = Depends(_require_token)) -> JSONResponse:
     await _set_setting("discord_dm_user_id", None)
+    return JSONResponse({"ok": True})
+
+
+@router.post("/discord/dm/test")
+async def test_dm(_: None = Depends(_require_token)) -> JSONResponse:
+    error = await send_preview_dm()
+    if error:
+        raise HTTPException(503, detail=error)
     return JSONResponse({"ok": True})
 
 

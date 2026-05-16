@@ -200,6 +200,9 @@
           <button onclick="saveDmUser()"
             style="border:1px solid #333;padding:3px 10px;font-size:10px;color:#666;cursor:pointer;background:transparent"
             class="hover:text-gray-200 hover:border-[#555] transition-colors whitespace-nowrap">SAVE</button>
+          <button id="test-dm-btn" onclick="testDm()"
+            style="border:1px solid #333;padding:3px 10px;font-size:10px;color:#666;cursor:pointer;background:transparent"
+            class="hover:text-gray-200 hover:border-[#555] transition-colors whitespace-nowrap">TEST DM</button>
           <button onclick="clearDmUser()"
             style="border:1px solid #3b1f1f;padding:3px 10px;font-size:10px;color:#7f1d1d;cursor:pointer;background:transparent"
             class="hover:text-red-400 hover:border-red-800 transition-colors">CLEAR</button>
@@ -271,7 +274,8 @@
 
   async function apiCall(path, method = 'GET', body = null) {
     const token = getToken();
-    const url = path + '?token=' + encodeURIComponent(token);
+    const sep = path.includes('?') ? '&' : '?';
+    const url = path + sep + 'token=' + encodeURIComponent(token);
     const opts = { method };
     if (body) opts.body = body;
     return fetch(url, opts);
@@ -484,14 +488,21 @@
         ].map(([val, label]) =>
           `<option value="${val}"${(ch.game === val || (ch.game == null && val === '')) ? ' selected' : ''}>${label}</option>`
         ).join('');
+        const muteStyle = ch.muted
+          ? 'border:1px solid #7f1d1d;padding:2px 8px;font-size:10px;color:#ef4444;cursor:pointer;background:transparent'
+          : 'border:1px solid #333;padding:2px 8px;font-size:10px;color:#666;cursor:pointer;background:transparent';
+        const muteLabel = ch.muted ? 'UNMUTE' : 'MUTE';
         return `<div class="flex items-center gap-2 py-1 flex-wrap" style="font-family:monospace;font-size:11px">
           <span style="color:#333;flex-shrink:0">${prefix}</span>
-          <span style="color:#aaa;min-width:140px">${name}</span>
+          <span style="color:${ch.muted ? '#555' : '#aaa'};min-width:140px">${name}${ch.muted ? ' <span style="color:#7f1d1d;font-size:9px">[MUTED]</span>' : ''}</span>
           <span style="color:#444;font-size:10px">${ch.channel_id}</span>
           <select onchange="updateChannelFilter('${ch.channel_id}', this.value)"
             style="background:#0a0a0a;border:1px solid #333;color:#888;font-size:10px;padding:2px 6px;margin-left:auto;cursor:pointer">
             ${gameOpts}
           </select>
+          <button onclick="toggleChannelMute('${ch.channel_id}', ${ch.muted}, this)"
+            style="${muteStyle}"
+            class="hover:text-gray-200 hover:border-[#555] transition-colors">${muteLabel}</button>
           <button onclick="previewChannel('${ch.channel_id}', this)"
             style="border:1px solid #333;padding:2px 8px;font-size:10px;color:#666;cursor:pointer;background:transparent"
             class="hover:text-gray-200 hover:border-[#555] transition-colors">PREVIEW</button>
@@ -510,9 +521,19 @@
   }
 
   async function updateChannelFilter(channelId, game) {
-    const token = getToken();
-    const url = `/utils/discord/channels/${channelId}?token=${encodeURIComponent(token)}${game ? '&game=' + encodeURIComponent(game) : ''}`;
-    try { await fetch(url, { method: 'PATCH' }); } catch {}
+    try { await apiCall(`/utils/discord/channels/${channelId}${game ? '?game=' + encodeURIComponent(game) : ''}`, 'PATCH'); } catch {}
+  }
+
+  async function toggleChannelMute(channelId, currentlyMuted, btn) {
+    const newMuted = !currentlyMuted;
+    btn.textContent = '…';
+    btn.disabled = true;
+    try {
+      const res = await apiCall(`/utils/discord/channels/${channelId}/mute?muted=${newMuted}`, 'PATCH');
+      if (res.ok) { loadDiscordChannels(); return; }
+    } catch {}
+    btn.textContent = currentlyMuted ? 'UNMUTE' : 'MUTE';
+    btn.disabled = false;
   }
 
   async function removeChannel(channelId, btn) {
@@ -633,6 +654,28 @@
       const d = await res.json();
       if (d.user_id) document.getElementById('dm-user-input').value = d.user_id;
     } catch {}
+  }
+
+  async function testDm() {
+    const btn = document.getElementById('test-dm-btn');
+    const el = document.getElementById('dm-status');
+    const orig = btn.textContent;
+    btn.textContent = '…';
+    btn.disabled = true;
+    el.innerHTML = dim('// SENDING…');
+    try {
+      const res = await apiCall('/utils/discord/dm/test', 'POST');
+      if (res.ok) {
+        el.innerHTML = ok('● DM SENT');
+      } else {
+        let detail = 'Failed';
+        try { const j = await res.json(); detail = j.detail || detail; } catch {}
+        el.innerHTML = err('● ' + detail.toUpperCase());
+      }
+    } catch (e) { el.innerHTML = err('● ' + e.message); }
+    btn.textContent = orig;
+    btn.disabled = false;
+    setTimeout(() => { el.innerHTML = ''; }, 4000);
   }
 
   async function saveDmUser() {
