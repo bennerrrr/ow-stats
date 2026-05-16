@@ -1,5 +1,6 @@
 import aiosqlite
 import asyncio
+import hmac
 import io
 import os
 import re
@@ -29,6 +30,7 @@ _start_time = time.time()
 
 _version_cache: dict = {"data": None, "fetched_at": 0.0}
 _VERSION_TTL = 3600
+_MAX_IMPORT_BYTES = 50 * 1024 * 1024  # 50 MB
 
 
 @router.get("", include_in_schema=False)
@@ -45,7 +47,7 @@ def _require_token(
     provided = token
     if not provided and authorization:
         provided = authorization.removeprefix("Bearer ")
-    if provided != _UTILS_TOKEN:
+    if not provided or not hmac.compare_digest(provided, _UTILS_TOKEN):
         raise HTTPException(403, detail="Invalid token")
 
 
@@ -134,7 +136,9 @@ async def export_db(_: None = Depends(_require_token)) -> StreamingResponse:
 async def import_db(file: UploadFile, _: None = Depends(_require_token)) -> JSONResponse:
     tmp_path = _DB_PATH.parent / "ow_stats.db.tmp"
     try:
-        contents = await file.read()
+        contents = await file.read(_MAX_IMPORT_BYTES + 1)
+        if len(contents) > _MAX_IMPORT_BYTES:
+            raise HTTPException(413, detail="File too large (max 50 MB)")
         tmp_path.write_bytes(contents)
 
         # Validate it's a SQLite DB with the expected tables

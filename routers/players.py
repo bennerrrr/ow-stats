@@ -1,6 +1,7 @@
 import asyncio
 import json
 import os
+import re
 from datetime import datetime, timezone, timedelta
 from urllib.parse import quote
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -18,6 +19,9 @@ from _templates import templates
 
 router = APIRouter()
 templates.env.filters["urltag"] = lambda t: t.replace("#", "%23")
+
+_ALLOWED_GAMES = {"overwatch", "hell_let_loose"}
+_STEAM_ID_RE = re.compile(r'^\d{17}$')
 
 try:
     _DISPLAY_TZ = ZoneInfo(os.getenv("DISPLAY_TIMEZONE", "America/New_York"))
@@ -418,6 +422,8 @@ async def add_player(
 ):
     player_id = player_id.strip()
     game = game.strip()
+    if game not in _ALLOWED_GAMES:
+        game = "overwatch"
 
     existing = await db.execute(select(Player).where(Player.battletag == player_id))
     redirect_base = "/hll" if game == "hell_let_loose" else "/overwatch"
@@ -425,6 +431,8 @@ async def add_player(
         return RedirectResponse(f"{redirect_base}?error=already_tracked", status_code=303)
 
     if game == "hell_let_loose":
+        if not _STEAM_ID_RE.match(player_id):
+            return RedirectResponse("/hll?error=invalid_steam_id", status_code=303)
         return await _add_hll_player_web(player_id, db)
     else:
         return await _add_ow_player_web(player_id, db)

@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import os
+import re
 from collections.abc import Callable, Coroutine
 from datetime import datetime, timezone, timedelta
 
@@ -865,7 +866,16 @@ async def _add_ow_player(interaction: discord.Interaction, battletag: str) -> No
         await interaction.followup.send(f"Now tracking **{battletag}** (Overwatch 2)!", embed=embed)
 
 
+_STEAM_ID_RE = re.compile(r'^\d{17}$')
+
+
 async def _add_hll_player(interaction: discord.Interaction, steam_id: str) -> None:
+    if not _STEAM_ID_RE.match(steam_id):
+        await interaction.followup.send(
+            f"`{steam_id}` is not a valid Steam64 ID. Must be a 17-digit number.",
+            ephemeral=True,
+        )
+        return
     from hll_client import fetch_player as hll_fetch, PlayerNotFoundError, ProfilePrivateError, HLLClientError
     api_key = os.getenv("STEAM_API_KEY", "")
     if not api_key:
