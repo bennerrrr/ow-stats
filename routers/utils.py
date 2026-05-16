@@ -12,13 +12,12 @@ import httpx
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, UploadFile
 from fastapi.responses import JSONResponse, StreamingResponse
-from fastapi.templating import Jinja2Templates
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database import DATABASE_URL, AsyncSessionLocal, engine, get_db
 from discord_bot import bot, _get_setting, _set_setting, send_preview_dm
-from models import DiscordChannel, Player, Setting
+from models import DiscordChannel, Player
 from scheduler import poll_all_players, scheduler
 from _templates import templates
 

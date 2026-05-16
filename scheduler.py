@@ -282,16 +282,16 @@ async def _snapshot_hll(steam_id: str) -> None:
     else:
         if steam_id in _pending_sessions:
             sess = _pending_sessions.pop(steam_id)
-            b, l = sess["baseline"], sess["latest"]
+            b, latest = sess["baseline"], sess["latest"]
 
             def _delta(key):
-                return (l[key] - b[key]) if (l.get(key) is not None and b.get(key) is not None) else None
+                return (latest[key] - b[key]) if (latest.get(key) is not None and b.get(key) is not None) else None
 
             asyncio.create_task(_send_hll_session_report(
                 player_name=sess["player_name"],
                 steam_id=steam_id,
                 avatar_url=sess["avatar_url"],
-                duration_minutes=l["playtime"] - b["playtime"],
+                duration_minutes=latest["playtime"] - b["playtime"],
                 kills_delta=_delta("kills"),
                 headshots_delta=_delta("headshots"),
                 sector_caps_delta=_delta("sector_caps"),

@@ -13,12 +13,12 @@ from starlette.requests import Request as StarletteRequest
 
 load_dotenv()
 
-from database import init_db, AsyncSessionLocal
-from discord_bot import start_bot, stop_bot
-from models import Player
-from routers.players import router
-from routers.utils import router as utils_router
-from scheduler import start_scheduler, stop_scheduler, poll_all_players
+from database import init_db, AsyncSessionLocal  # noqa: E402
+from discord_bot import start_bot, stop_bot  # noqa: E402
+from models import Player  # noqa: E402
+from routers.players import router  # noqa: E402
+from routers.utils import router as utils_router  # noqa: E402
+from scheduler import start_scheduler, stop_scheduler, poll_all_players  # noqa: E402
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s — %(message)s")
 logger = logging.getLogger(__name__)
