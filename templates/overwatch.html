@@ -36,7 +36,7 @@
       class="px-3 py-1.5 text-xs text-white placeholder-gray-700 focus:outline-none focus:border-ow-orange w-48" />
     <button type="submit"
       style="background:#F99E1A;color:#000;"
-      class="font-bold text-xs px-4 py-1.5 uppercase tracking-wider hover:opacity-90 transition-opacity">
+      class="lock-target font-bold text-xs px-4 py-1.5 uppercase tracking-wider hover:opacity-90 transition-opacity">
       + TRACK
     </button>
   </div>
@@ -74,7 +74,7 @@
       {% endif %}
       <div class="min-w-0 flex-1">
         <a href="/players/{{ player.battletag | urltag }}"
-          class="font-bold text-white hover:text-ow-orange transition-colors truncate block text-sm uppercase tracking-wide">
+          class="lock-target font-bold text-white hover:text-ow-orange transition-colors truncate block text-sm uppercase tracking-wide">
           {{ player.display_name or player.battletag.split('#')[0] }}
         </a>
         {% if _std_tag %}

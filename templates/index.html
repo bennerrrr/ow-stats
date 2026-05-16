@@ -3,6 +3,8 @@
 
 {% block content %}
 
+<canvas id="hex-canvas" style="position:fixed;inset:0;z-index:-1;pointer-events:none;opacity:0.55;"></canvas>
+
 <div class="text-center mb-12 py-6">
   <div class="text-xs text-gray-700 tracking-[0.4em] uppercase mb-3">// STATS COMMAND</div>
   <h1 class="text-3xl font-bold text-white tracking-tight mb-2">LIVE TRACKING</h1>
@@ -19,7 +21,7 @@
   <!-- OW2 -->
   <a href="/overwatch"
     style="background:#111111;border:1px solid #272727;border-left:3px solid #F99E1A;"
-    class="group p-8 flex flex-col gap-5 transition-all duration-150 hover:bg-[#161616]">
+    class="lock-target group p-8 flex flex-col gap-5 transition-all duration-150 hover:bg-[#161616]">
     <img src="/static/media/ow2-logo.svg" alt="Overwatch 2" class="w-12 h-12 object-contain"
          onerror="this.style.display='none';this.nextElementSibling.style.display='block'">
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" class="w-12 h-12" style="display:none">
@@ -39,7 +41,7 @@
   <!-- HLL -->
   <a href="/hll"
     style="background:#111111;border:1px solid #272727;border-left:3px solid #8FBC4A;"
-    class="group p-8 flex flex-col gap-5 transition-all duration-150 hover:bg-[#161616]">
+    class="lock-target group p-8 flex flex-col gap-5 transition-all duration-150 hover:bg-[#161616]">
     <img src="/static/media/hll-logo.svg" alt="Hell Let Loose" class="w-50 h-12 object-contain"
          onerror="this.style.display='none';this.nextElementSibling.style.display='block'">
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" class="w-12 h-12" style="display:none">
@@ -62,5 +64,54 @@
   </a>
 
 </div>
+
+<script>
+(function() {
+  const cvs = document.getElementById('hex-canvas');
+  const ctx = cvs.getContext('2d');
+  const r = 24, xStep = r * 1.5, yStep = r * Math.sqrt(3);
+  let ox = 0, oy = 0;
+
+  function resize() { cvs.width = innerWidth; cvs.height = innerHeight; }
+
+  function draw() {
+    ctx.clearRect(0, 0, cvs.width, cvs.height);
+    ctx.strokeStyle = 'rgba(0,212,255,0.18)';
+    ctx.lineWidth = 0.5;
+    ctx.beginPath();
+
+    const c0 = Math.floor(ox / xStep) - 1;
+    const c1 = c0 + Math.ceil(cvs.width / xStep) + 3;
+    const r0 = Math.floor(oy / yStep) - 1;
+    const r1 = r0 + Math.ceil(cvs.height / yStep) + 3;
+
+    for (let c = c0; c <= c1; c++) {
+      const yOff = Math.abs(c) % 2 ? yStep / 2 : 0;
+      for (let rr = r0; rr <= r1; rr++) {
+        const cx = c * xStep - ox, cy = rr * yStep + yOff - oy;
+        for (let i = 0; i < 6; i++) {
+          const a = Math.PI / 3 * i;
+          i ? ctx.lineTo(cx + r * Math.cos(a), cy + r * Math.sin(a))
+            : ctx.moveTo(cx + r * Math.cos(a), cy + r * Math.sin(a));
+        }
+        ctx.closePath();
+      }
+    }
+    ctx.stroke();
+  }
+
+  function frame() {
+    ox += 0.1; oy += 0.05;
+    if (ox > xStep * 5000) ox -= xStep * 5000;
+    if (oy > yStep * 5000) oy -= yStep * 5000;
+    draw();
+    requestAnimationFrame(frame);
+  }
+
+  resize();
+  window.addEventListener('resize', resize);
+  requestAnimationFrame(frame);
+})();
+</script>
 
 {% endblock %}

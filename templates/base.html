@@ -65,6 +65,14 @@
 
     /* Rank badge */
     .rank-badge { font-size: 0.65rem; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; }
+
+    /* Missile lock-on hover effect */
+    @keyframes lock-on {
+      0%   { box-shadow: 0 0 0 1px rgba(255,50,50,1), 0 0 20px rgba(255,50,50,0.7); }
+      100% { box-shadow: 0 0 0 1px rgba(255,50,50,0.6), 0 0 8px rgba(255,50,50,0.15); }
+    }
+    .lock-target:hover { animation: lock-on 0.4s ease-out forwards; }
+    .lock-target:active { animation: none; transform: scale(0.98); box-shadow: 0 0 0 1px rgba(255,50,50,0.95), 0 0 14px rgba(255,50,50,0.45); }
   </style>
 </head>
 <body class="min-h-screen">
