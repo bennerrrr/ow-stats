@@ -1,3 +1,4 @@
+import os
 import re
 import subprocess
 from fastapi.templating import Jinja2Templates
@@ -9,6 +10,10 @@ def _semver(tag: str) -> tuple:
 
 
 def _get_version_info() -> dict:
+    env_version = os.environ.get("APP_VERSION", "").strip()
+    if env_version and env_version != "dev":
+        return {"version": env_version, "latest": env_version, "outdated": False}
+
     try:
         local = subprocess.check_output(
             ["git", "describe", "--tags", "--abbrev=0"],
