@@ -4,7 +4,6 @@ on:
   pull_request:
     branches: [main]
   push:
-    branches: [main]
     tags: ['v*']
 
 env:
@@ -26,6 +25,9 @@ jobs:
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
+
+      - name: Lint
+        uses: chartboost/ruff-action@v1
 
       - name: Build
         uses: docker/build-push-action@v6

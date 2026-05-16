@@ -2,16 +2,21 @@ name: Claude Code Review
 
 on:
   pull_request:
-    types: [closed]
+    types: [opened, synchronize, reopened, closed]
     branches: [main]
     paths:
       - "**.py"
       - "templates/**"
+      - "static/**"
       - "*.yml"
 
 jobs:
   claude-review:
-    if: github.event.pull_request.merged == true
+    if: >
+      github.event.pull_request.merged == true ||
+      github.event.action == 'opened' ||
+      github.event.action == 'synchronize' ||
+      github.event.action == 'reopened'
     runs-on: ubuntu-latest
     permissions:
       contents: read
