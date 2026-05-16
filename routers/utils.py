@@ -53,7 +53,7 @@ async def check_version(_: None = Depends(_require_token)) -> JSONResponse:
     if _version_cache["data"] and now - _version_cache["fetched_at"] < _VERSION_TTL:
         return JSONResponse({**_version_cache["data"], "cached": True})
 
-    current = os.getenv("APP_VERSION", "dev").strip()
+    current = templates.env.globals["app_version"]
     try:
         async with httpx.AsyncClient(timeout=8) as client:
             r = await client.get(
@@ -62,8 +62,8 @@ async def check_version(_: None = Depends(_require_token)) -> JSONResponse:
             )
             r.raise_for_status()
             latest = r.json()["tag_name"]
-    except Exception as exc:
-        return JSONResponse({"error": str(exc)}, status_code=502)
+    except Exception:
+        return JSONResponse({"error": "Failed to reach GitHub API"}, status_code=502)
 
     def _sv(tag: str) -> tuple:
         m = re.match(r"v?(\d+)\.(\d+)\.(\d+)", tag)
