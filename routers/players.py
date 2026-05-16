@@ -436,6 +436,9 @@ async def leaderboard(request: Request, db: AsyncSession = Depends(get_db)):
                 "fetched_at": snap.fetched_at if snap else None,
             })
 
+    ow_rows.sort(key=lambda r: r["win_rate"] if r["win_rate"] is not None else -1, reverse=True)
+    hll_rows.sort(key=lambda r: r["kills"] if r["kills"] is not None else -1, reverse=True)
+
     return templates.TemplateResponse("leaderboard.html", {
         "request": request,
         "ow_rows": ow_rows,
@@ -584,8 +587,7 @@ async def _add_ow_player_web(battletag: str, db: AsyncSession):
     await db.commit()
     await db.refresh(player)
     await snapshot_player(battletag)
-    name = quote(data.username or battletag, safe="")
-    return RedirectResponse(f"/overwatch?added={name}", status_code=303)
+    return RedirectResponse("/overwatch?added=1", status_code=303)
 
 
 async def _add_hll_player_web(steam_id: str, db: AsyncSession):
@@ -605,8 +607,7 @@ async def _add_hll_player_web(steam_id: str, db: AsyncSession):
     await db.commit()
     await db.refresh(player)
     await snapshot_player(steam_id)
-    name = quote(data.display_name or steam_id, safe="")
-    return RedirectResponse(f"/hll?added={name}", status_code=303)
+    return RedirectResponse("/hll?added=1", status_code=303)
 
 
 @router.post("/players/{battletag:path}/delete")

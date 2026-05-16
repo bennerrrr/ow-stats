@@ -26,7 +26,7 @@
 </div>
 {% elif added %}
 <div style="border-left:3px solid #44ff88;background:rgba(68,255,136,0.05);" class="mb-5 px-4 py-3 text-xs text-[#44ff88]">
-  ✓ NOW TRACKING {{ added }}
+  ✓ OPERATOR ADDED — now tracking.
 </div>
 {% endif %}
 
@@ -207,9 +207,12 @@
     const cards = Array.from(grid.children);
     cards.sort(function (a, b) {
       if (key === 'name') return a.dataset.name.localeCompare(b.dataset.name);
-      const av = parseFloat(a.dataset[key] ?? -1);
-      const bv = parseFloat(b.dataset[key] ?? -1);
-      return bv - av;
+      if (key === 'updated') {
+        const at = a.dataset.updated === '0' ? 0 : new Date(a.dataset.updated).getTime();
+        const bt = b.dataset.updated === '0' ? 0 : new Date(b.dataset.updated).getTime();
+        return bt - at;
+      }
+      return parseFloat(b.dataset[key] ?? -1) - parseFloat(a.dataset[key] ?? -1);
     });
     cards.forEach(function (c) { grid.appendChild(c); });
     document.querySelectorAll('[id^="sort-"]').forEach(function (btn) {

@@ -44,7 +44,7 @@
         </tr>
       </thead>
       <tbody id="ow-tbody" class="divide-y divide-[#1a1a1a]">
-        {% for row in ow_rows | sort(attribute='win_rate', reverse=True, default=-1) %}
+        {% for row in ow_rows %}
         <tr class="transition-colors hover:bg-[#161616]"
           data-wr="{{ row.win_rate if row.win_rate is not none else -1 }}"
           data-kda="{{ row.kda if row.kda is not none else -1 }}"
@@ -129,7 +129,7 @@
         </tr>
       </thead>
       <tbody id="hll-tbody" class="divide-y divide-[#1a1a1a]">
-        {% for row in hll_rows | sort(attribute='kills', reverse=True, default=-1) %}
+        {% for row in hll_rows %}
         <tr class="transition-colors hover:bg-[#161616]"
           data-kills="{{ row.kills if row.kills is not none else -1 }}"
           data-kph="{{ row.kph if row.kph is not none else -1 }}"
