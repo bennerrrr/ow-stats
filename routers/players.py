@@ -60,6 +60,23 @@ _ROLE_LABELS = {"tank": "Tank", "damage": "Damage", "support": "Support"}
 _ROLE_COLORS = {"tank": "blue", "damage": "red", "support": "green"}
 
 
+def _safe_json(data) -> str:
+    """json.dumps with HTML-unsafe chars escaped to prevent </script> injection."""
+    return (
+        json.dumps(data)
+        .replace("<", "\\u003c")
+        .replace(">", "\\u003e")
+        .replace("&", "\\u0026")
+    )
+
+
+def _safe_avatar_url(url: str | None) -> str | None:
+    """Accept only HTTPS avatar URLs of sane length; drop anything else."""
+    if url and url.startswith("https://") and len(url) <= 500:
+        return url
+    return None
+
+
 def _snapshots_to_json(snapshots) -> str:
     """OW: one chart point per snapshot where tracked stats changed, oldest-first."""
     result = []
@@ -85,7 +102,7 @@ def _snapshots_to_json(snapshots) -> str:
                 "qp_win_rate": qp_wr,
             })
             prev = (wr, kda, gp)
-    return json.dumps(result)
+    return _safe_json(result)
 
 
 def _hll_snapshots_to_json(snapshots) -> str:
@@ -107,7 +124,7 @@ def _hll_snapshots_to_json(snapshots) -> str:
                 "sector_caps": gd.get("sector_caps"),
             })
             prev = (kills, xp)
-    return json.dumps(result)
+    return _safe_json(result)
 
 
 def _compute_sessions(snapshots) -> list[dict]:
@@ -290,7 +307,7 @@ def _rank_history_to_json(rank_history: list[dict]) -> str:
             "support": entry["rank_support"],
             "open":    entry["rank_open"],
         })
-    return json.dumps(result)
+    return _safe_json(result)
 
 
 def _compute_ow_trend(snaps) -> dict | None:
@@ -429,6 +446,10 @@ async def add_player(
     if game not in _ALLOWED_GAMES:
         game = "overwatch"
 
+    if not player_id or len(player_id) > 100:
+        redirect_base = "/hll" if game == "hell_let_loose" else "/overwatch"
+        return RedirectResponse(f"{redirect_base}?error=invalid_id", status_code=303)
+
     existing = await db.execute(select(Player).where(Player.battletag == player_id))
     redirect_base = "/hll" if game == "hell_let_loose" else "/overwatch"
     if existing.scalar_one_or_none():
@@ -454,7 +475,7 @@ async def _add_ow_player_web(battletag: str, db: AsyncSession):
     except OverFastError:
         return RedirectResponse("/overwatch?error=api_error", status_code=303)
 
-    player = Player(battletag=battletag, game="overwatch", display_name=data.username, avatar_url=data.avatar)
+    player = Player(battletag=battletag, game="overwatch", display_name=data.username, avatar_url=_safe_avatar_url(data.avatar))
     db.add(player)
     await db.commit()
     await db.refresh(player)
@@ -474,7 +495,7 @@ async def _add_hll_player_web(steam_id: str, db: AsyncSession):
     except (HLLClientError, Exception):
         return RedirectResponse("/hll?error=api_error", status_code=303)
 
-    player = Player(battletag=steam_id, game="hell_let_loose", display_name=data.display_name, avatar_url=data.avatar)
+    player = Player(battletag=steam_id, game="hell_let_loose", display_name=data.display_name, avatar_url=_safe_avatar_url(data.avatar))
     db.add(player)
     await db.commit()
     await db.refresh(player)

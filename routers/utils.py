@@ -319,8 +319,11 @@ async def set_dm_user(
     user_id: str = Query(default=""),
     _: None = Depends(_require_token),
 ) -> JSONResponse:
-    await _set_setting("discord_dm_user_id", user_id.strip() or None)
-    return JSONResponse({"user_id": user_id.strip()})
+    user_id = user_id.strip()
+    if user_id and not re.match(r'^\d{17,20}$', user_id):
+        raise HTTPException(400, detail="Invalid Discord user ID")
+    await _set_setting("discord_dm_user_id", user_id or None)
+    return JSONResponse({"user_id": user_id})
 
 
 @router.delete("/discord/dm")
