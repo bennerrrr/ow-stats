@@ -11,7 +11,7 @@ from discord.ext import commands
 from sqlalchemy import select, or_
 
 from database import AsyncSessionLocal
-from models import DiscordChannel, Player, StatSnapshot
+from models import DiscordChannel, Player, Setting, StatSnapshot
 from ow_client import OverFastError, PlayerNotFoundError as OWPlayerNotFoundError, ProfilePrivateError, fetch_player as ow_fetch_player
 
 logger = logging.getLogger(__name__)
@@ -595,6 +595,27 @@ def build_compare_embed(p1: Player, s1: StatSnapshot, p2: Player, s2: StatSnapsh
 
 
 # ---------------------------------------------------------------------------
+# Settings helpers
+# ---------------------------------------------------------------------------
+
+async def _get_setting(key: str) -> str | None:
+    async with AsyncSessionLocal() as session:
+        row = await session.get(Setting, key)
+        return row.value if row else None
+
+
+async def _set_setting(key: str, value: str | None) -> None:
+    async with AsyncSessionLocal() as session:
+        row = await session.get(Setting, key)
+        if row is None:
+            row = Setting(key=key, value=value)
+            session.add(row)
+        else:
+            row.value = value
+        await session.commit()
+
+
+# ---------------------------------------------------------------------------
 # Notification dispatch (called by scheduler)
 # ---------------------------------------------------------------------------
 
@@ -603,6 +624,10 @@ async def _broadcast(embed: discord.Embed, game: str | None = None) -> None:
     Channels with game=NULL receive all games; channels with a specific game only
     receive notifications for that game.
     """
+    if await _get_setting("discord_muted") == "true":
+        logger.debug("Notifications muted — skipping broadcast")
+        return
+
     async with AsyncSessionLocal() as session:
         if game:
             result = await session.execute(
@@ -625,6 +650,20 @@ async def _broadcast(embed: discord.Embed, game: str | None = None) -> None:
                 logger.error("Failed to send to channel %s: %s", ch.channel_id, e)
 
 
+async def _send_dm(embed: discord.Embed) -> None:
+    """Send embed as a DM to the configured user (DB setting overrides env var)."""
+    if await _get_setting("discord_muted") == "true":
+        return
+    user_id = await _get_setting("discord_dm_user_id") or os.getenv("DISCORD_DM_USER_ID")
+    if not user_id:
+        return
+    try:
+        user = await bot.fetch_user(int(user_id))
+        await user.send(embed=embed)
+    except Exception as e:
+        logger.warning("DM failed to user %s: %s", user_id, e)
+
+
 async def send_game_report(
     player_name: str,
     battletag: str,
@@ -638,6 +677,7 @@ async def send_game_report(
         return
     embed = build_game_report_embed(player_name, battletag, avatar_url, prev, new)
     await _broadcast(embed, game="overwatch")
+    await _send_dm(embed)
 
 
 async def send_stats_update(
@@ -653,6 +693,7 @@ async def send_stats_update(
         return
     embed = build_stats_update_embed(player_name, battletag, avatar_url, prev, new)
     await _broadcast(embed, game="overwatch")
+    await _send_dm(embed)
 
 
 async def send_hll_session_report(
@@ -678,6 +719,7 @@ async def send_hll_session_report(
         kills_delta, headshots_delta, sector_caps_delta, xp_delta, top_role,
     )
     await _broadcast(embed, game="hell_let_loose")
+    await _send_dm(embed)
 
 
 async def send_preview_to_channel(channel_id: str) -> bool:

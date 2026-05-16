@@ -17,8 +17,8 @@ from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database import DATABASE_URL, AsyncSessionLocal, engine, get_db
-from discord_bot import bot
-from models import DiscordChannel
+from discord_bot import bot, _get_setting, _set_setting
+from models import DiscordChannel, Player, Setting
 from scheduler import poll_all_players, scheduler
 from _templates import templates
 
@@ -263,3 +263,57 @@ async def discord_invite(_: None = Depends(_require_token)) -> JSONResponse:
         f"?client_id={bot.user.id}&permissions={perms}&scope=bot+applications.commands"
     )
     return JSONResponse({"url": url, "client_id": str(bot.user.id)})
+
+
+@router.get("/discord/mute")
+async def get_mute(_: None = Depends(_require_token)) -> JSONResponse:
+    muted = await _get_setting("discord_muted") == "true"
+    return JSONResponse({"muted": muted})
+
+
+@router.post("/discord/mute")
+async def set_mute(
+    muted: bool = Query(...),
+    _: None = Depends(_require_token),
+) -> JSONResponse:
+    await _set_setting("discord_muted", "true" if muted else "false")
+    return JSONResponse({"muted": muted})
+
+
+@router.get("/discord/dm")
+async def get_dm_user(_: None = Depends(_require_token)) -> JSONResponse:
+    user_id = await _get_setting("discord_dm_user_id")
+    return JSONResponse({"user_id": user_id or ""})
+
+
+@router.post("/discord/dm")
+async def set_dm_user(
+    user_id: str = Query(default=""),
+    _: None = Depends(_require_token),
+) -> JSONResponse:
+    await _set_setting("discord_dm_user_id", user_id.strip() or None)
+    return JSONResponse({"user_id": user_id.strip()})
+
+
+@router.delete("/discord/dm")
+async def clear_dm_user(_: None = Depends(_require_token)) -> JSONResponse:
+    await _set_setting("discord_dm_user_id", None)
+    return JSONResponse({"ok": True})
+
+
+@router.get("/players")
+async def list_players(
+    _: None = Depends(_require_token),
+    db: AsyncSession = Depends(get_db),
+) -> JSONResponse:
+    result = await db.execute(select(Player).order_by(Player.game, Player.added_at))
+    players = result.scalars().all()
+    return JSONResponse([
+        {
+            "battletag": p.battletag,
+            "game": p.game,
+            "display_name": p.display_name,
+            "avatar_url": p.avatar_url,
+        }
+        for p in players
+    ])
