@@ -143,9 +143,11 @@ def _compute_sessions(snapshots) -> list[dict]:
         session_wr = round(delta_wins / delta_games * 100, 1)
         kda_delta = round(curr.kda - prev.kda, 2) if (curr.kda is not None and prev.kda is not None) else None
 
+        ts = prev.fetched_at if prev.fetched_at.tzinfo else prev.fetched_at.replace(tzinfo=timezone.utc)
         sessions.append({
             "start": _to_display_tz(prev.fetched_at).strftime("%b %d %H:%M %Z"),
             "end": _to_display_tz(curr.fetched_at).strftime("%b %d %H:%M %Z"),
+            "ts_iso": ts.isoformat(),
             "games": delta_games,
             "wins": delta_wins,
             "losses": delta_losses,
@@ -175,8 +177,10 @@ def _compute_hll_sessions(snapshots) -> list[dict]:
         prev_xp = pgd.get("total_xp")
         curr_xp = cgd.get("total_xp")
         xp_delta = (curr_xp - prev_xp) if (curr_xp is not None and prev_xp is not None) else None
+        ts = prev.fetched_at if prev.fetched_at.tzinfo else prev.fetched_at.replace(tzinfo=timezone.utc)
         sessions.append({
             "start": _to_display_tz(prev.fetched_at).strftime("%b %d %H:%M %Z"),
+            "ts_iso": ts.isoformat(),
             "duration": _fmt_duration(delta_minutes * 60),
             "duration_minutes": delta_minutes,
             "kills_delta": kills_delta,
@@ -480,7 +484,8 @@ async def _add_ow_player_web(battletag: str, db: AsyncSession):
     await db.commit()
     await db.refresh(player)
     await snapshot_player(battletag)
-    return RedirectResponse("/overwatch", status_code=303)
+    name = quote(data.username or battletag, safe="")
+    return RedirectResponse(f"/overwatch?added={name}", status_code=303)
 
 
 async def _add_hll_player_web(steam_id: str, db: AsyncSession):
@@ -500,7 +505,8 @@ async def _add_hll_player_web(steam_id: str, db: AsyncSession):
     await db.commit()
     await db.refresh(player)
     await snapshot_player(steam_id)
-    return RedirectResponse("/hll", status_code=303)
+    name = quote(data.display_name or steam_id, safe="")
+    return RedirectResponse(f"/hll?added={name}", status_code=303)
 
 
 @router.post("/players/{battletag:path}/delete")

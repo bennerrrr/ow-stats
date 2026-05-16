@@ -12,8 +12,9 @@
   <span class="text-xs text-gray-600 mb-1">{{ players | length }} OPERATOR{{ 'S' if players | length != 1 }}</span>
 </div>
 
-<!-- Error banner -->
+<!-- Error / success banners -->
 {% set error = request.query_params.get('error') %}
+{% set added = request.query_params.get('added') %}
 {% if error %}
 <div style="border-left:3px solid {% if error == 'private' %}#ff8800{% elif error == 'already_tracked' %}#3b82f6{% else %}#ff4444{% endif %};background:rgba(255,68,68,0.05);"
   class="mb-5 px-4 py-3 text-xs">
@@ -21,6 +22,10 @@
   {% elif error == 'not_found' %}⚠ PLAYER NOT FOUND — double-check BattleTag (format: Name#1234).
   {% elif error == 'already_tracked' %}⚠ ALREADY TRACKED — that operator is already in the system.
   {% else %}⚠ API ERROR — try again in a moment.{% endif %}
+</div>
+{% elif added %}
+<div style="border-left:3px solid #44ff88;background:rgba(68,255,136,0.05);" class="mb-5 px-4 py-3 text-xs text-[#44ff88]">
+  ✓ NOW TRACKING {{ added }}
 </div>
 {% endif %}
 
@@ -31,9 +36,13 @@
   <input type="hidden" name="game" value="overwatch" />
   <span class="text-xs text-gray-600 uppercase tracking-widest">// ADD OPERATOR</span>
   <div class="flex gap-2 ml-auto flex-wrap">
-    <input type="text" name="player_id" placeholder="BattleTag#1234" required
-      style="background:#0a0a0a;border:1px solid #333;"
-      class="px-3 py-1.5 text-xs text-white placeholder-gray-700 focus:outline-none focus:border-ow-orange w-48" />
+    <div class="flex flex-col gap-1">
+      <input type="text" name="player_id" id="ow-player-input" placeholder="BattleTag#1234" required
+        style="background:#0a0a0a;border:1px solid #333;"
+        class="px-3 py-1.5 text-xs text-white placeholder-gray-700 focus:outline-none focus:border-ow-orange w-48"
+        oninput="document.getElementById('ow-hint').classList.add('hidden')" />
+      <span id="ow-hint" class="text-[10px] text-red-400 hidden">format: Name#1234</span>
+    </div>
     <button type="submit"
       style="background:#F99E1A;color:#000;"
       class="lock-target font-bold text-xs px-4 py-1.5 uppercase tracking-wider hover:opacity-90 transition-opacity">
@@ -49,7 +58,15 @@
   <p class="text-gray-700 text-xs mt-2">Add a BattleTag above to start tracking.</p>
 </div>
 {% else %}
-<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+<div class="flex items-center gap-1 mb-3">
+  <span class="text-[10px] text-gray-700 uppercase tracking-wider mr-1">SORT</span>
+  {% for key, label in [('updated','LAST SEEN'),('name','NAME'),('wr','WIN RATE'),('kda','KDA')] %}
+  <button onclick="sortGrid('{{ key }}')" id="sort-{{ key }}"
+    style="border:1px solid {% if key == 'updated' %}#F99E1A{% else %}#333{% endif %};color:{% if key == 'updated' %}#F99E1A{% else %}#555{% endif %};"
+    class="text-[10px] px-2 py-0.5 uppercase tracking-wider transition-colors">{{ label }}</button>
+  {% endfor %}
+</div>
+<div id="player-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
   {% for item in players %}
   {% set player = item.player %}
   {% set snap = item.snapshot %}
@@ -59,7 +76,11 @@
   {% set _std_tag = '#' in player.battletag %}
 
   <div style="background:#111111;border:1px solid #272727;border-left:3px solid {% if freshness == 'LIVE' %}#44ff88{% else %}#F99E1A{% endif %};"
-    class="p-4 flex flex-col gap-3 transition-all duration-150 hover:bg-[#161616]">
+    class="p-4 flex flex-col gap-3 transition-all duration-150 hover:bg-[#161616]"
+    data-name="{{ (player.display_name or player.battletag.split('#')[0]).lower() }}"
+    data-updated="{{ snap.fetched_at.isoformat() if snap else '0' }}"
+    data-wr="{{ (snap.win_rate * 100) | round(2) if (snap and snap.win_rate is not none) else -1 }}"
+    data-kda="{{ snap.kda if (snap and snap.kda is not none) else -1 }}">
 
     <!-- Header: avatar + name + status -->
     <div class="flex items-center gap-3">
@@ -193,5 +214,39 @@
   {% endfor %}
 </div>
 {% endif %}
+
+<script>
+(function () {
+  const form = document.querySelector('form[action="/players/add"]');
+  if (form) {
+    form.addEventListener('submit', function (e) {
+      const input = document.getElementById('ow-player-input');
+      if (!/^.+#\d{4,5}$/.test(input.value.trim())) {
+        e.preventDefault();
+        document.getElementById('ow-hint').classList.remove('hidden');
+        input.focus();
+      }
+    });
+  }
+
+  window.sortGrid = function (key) {
+    const grid = document.getElementById('player-grid');
+    if (!grid) return;
+    const cards = Array.from(grid.children);
+    cards.sort(function (a, b) {
+      if (key === 'name') return a.dataset.name.localeCompare(b.dataset.name);
+      const av = parseFloat(a.dataset[key] ?? -1);
+      const bv = parseFloat(b.dataset[key] ?? -1);
+      return bv - av;
+    });
+    cards.forEach(function (c) { grid.appendChild(c); });
+    document.querySelectorAll('[id^="sort-"]').forEach(function (btn) {
+      const active = btn.id === 'sort-' + key;
+      btn.style.borderColor = active ? '#F99E1A' : '#333';
+      btn.style.color = active ? '#F99E1A' : '#555';
+    });
+  };
+})();
+</script>
 
 {% endblock %}
