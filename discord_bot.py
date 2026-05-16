@@ -13,7 +13,6 @@ from sqlalchemy.exc import OperationalError
 
 from database import AsyncSessionLocal
 from models import DiscordChannel, Player, Setting, StatSnapshot
-from ow_client import OverFastError, PlayerNotFoundError as OWPlayerNotFoundError, ProfilePrivateError, fetch_player as ow_fetch_player
 
 logger = logging.getLogger(__name__)
 
@@ -229,8 +228,8 @@ def build_ow_stats_embed(player: Player, snapshot: StatSnapshot, snaps=None) -> 
         stat_lines.append(f"**KDA:** {snapshot.kda:.2f}")
     if snapshot.games_played is not None:
         w = snapshot.games_won or 0
-        l = snapshot.games_lost or 0
-        stat_lines.append(f"**Games:** {snapshot.games_played} ({w}W / {l}L)")
+        lost = snapshot.games_lost or 0
+        stat_lines.append(f"**Games:** {snapshot.games_played} ({w}W / {lost}L)")
     if stat_lines:
         embed.add_field(name="Overall Stats", value="\n".join(stat_lines), inline=True)
 
@@ -1197,8 +1196,8 @@ async def cmd_leaderboard(
             if s.games_played is None:
                 return "—"
             w = s.games_won or 0
-            l = s.games_lost or 0
-            return f"{s.games_played:,} ({w}W / {l}L)"
+            lost = s.games_lost or 0
+            return f"{s.games_played:,} ({w}W / {lost}L)"
         gd = s.game_data or {}
         if sk == "kills":
             k = gd.get("kills")
