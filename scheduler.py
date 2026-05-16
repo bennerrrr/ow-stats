@@ -291,7 +291,7 @@ async def _snapshot_hll(steam_id: str) -> None:
                 player_name=sess["player_name"],
                 steam_id=steam_id,
                 avatar_url=sess["avatar_url"],
-                duration_minutes=l["playtime"] - b["playtime"],
+                duration_minutes=latest["playtime"] - b["playtime"],
                 kills_delta=_delta("kills"),
                 headshots_delta=_delta("headshots"),
                 sector_caps_delta=_delta("sector_caps"),
