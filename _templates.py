@@ -10,9 +10,12 @@ def _semver(tag: str) -> tuple:
 
 
 def _get_version_info() -> dict:
+    env_version = os.environ.get("APP_VERSION", "").strip()
+    if env_version and env_version != "dev":
+        return {"version": env_version, "latest": env_version, "outdated": False}
+
     try:
-        env_version = os.environ.get("APP_VERSION", "").strip()
-        local = env_version if env_version and env_version != "dev" else subprocess.check_output(
+        local = subprocess.check_output(
             ["git", "describe", "--tags", "--abbrev=0"],
             stderr=subprocess.DEVNULL,
         ).decode().strip()
