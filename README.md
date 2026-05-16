@@ -136,8 +136,8 @@ Per-player page with:
 |---|---|
 | `/add_player player_id [game]` | Start tracking a player. `player_id` is a BattleTag (`Name#1234`) for OW2 or a Steam64 ID for HLL. `game` defaults to Overwatch 2. Fetches and displays a stats embed on success. |
 | `/remove_player player_id` | Stop tracking a player. `player_id` autocompletes from all tracked players. |
-| `/stats player_id` | Show the latest stats for a tracked player. For OW2, also supports live lookup of any BattleTag even if not tracked. |
-| `/players` | List all currently tracked players grouped by game. |
+| `/stats player_id` | Show a rich stats embed for a tracked player: current ranks, career stats, a 7-day trend (games played, win rate, and KDA deltas), the most recent play session (W/L, session WR, KDA delta, and relative time), and top heroes. Footer shows time since last data update. For OW2, also supports live lookup of any BattleTag even if not tracked (trend and session data are unavailable for untracked players). |
+| `/players` | List all currently tracked players grouped by game, each showing time since their last data update. |
 | `/set_channel [game]` | Register the current channel to receive notifications. `game` can be "All games" (default), "Overwatch 2 only", or "Hell Let Loose only". Running the command again on an already-registered channel updates the game filter. |
 | `/remove_channel` | Unregister the current channel from notifications. |
 

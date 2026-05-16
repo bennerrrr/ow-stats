@@ -2,7 +2,7 @@ import asyncio
 import logging
 import os
 from collections.abc import Callable, Coroutine
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 import discord
 from discord import app_commands
@@ -87,11 +87,112 @@ def _snapshot_to_dict(snapshot: StatSnapshot) -> dict:
     }
 
 
+def _discord_timeago(dt: datetime) -> str:
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    secs = (datetime.now(timezone.utc) - dt).total_seconds()
+    if secs < 7200:
+        return "just now"
+    if secs < 86400:
+        return f"{int(secs // 3600)}h ago"
+    if secs < 604800:
+        return f"{int(secs // 86400)}d ago"
+    return f"{int(secs // 604800)}w ago"
+
+
+def _trend_baseline(snaps, days: int = 7):
+    """Return (baseline_snap, period_days) from a desc-ordered snapshot list."""
+    if len(snaps) < 2:
+        return None, 0
+    latest_time = snaps[0].fetched_at if snaps[0].fetched_at.tzinfo else snaps[0].fetched_at.replace(tzinfo=timezone.utc)
+    cutoff = latest_time - timedelta(days=days)
+    baseline = None
+    for s in snaps[1:]:
+        st = s.fetched_at if s.fetched_at.tzinfo else s.fetched_at.replace(tzinfo=timezone.utc)
+        if st <= cutoff:
+            baseline = s
+            break
+    if baseline is None:
+        baseline = snaps[-1]
+    bt = baseline.fetched_at if baseline.fetched_at.tzinfo else baseline.fetched_at.replace(tzinfo=timezone.utc)
+    period = round((latest_time - bt).total_seconds() / 86400)
+    return baseline, period
+
+
+def _ow_trend(snaps) -> dict | None:
+    baseline, period = _trend_baseline(snaps)
+    if baseline is None:
+        return None
+    latest = snaps[0]
+    games_delta = wr_delta = kda_delta = None
+    if latest.games_played is not None and baseline.games_played is not None:
+        games_delta = latest.games_played - baseline.games_played
+    if latest.win_rate is not None and baseline.win_rate is not None:
+        wr_delta = round((latest.win_rate - baseline.win_rate) * 100, 1)
+    if latest.kda is not None and baseline.kda is not None:
+        kda_delta = round(latest.kda - baseline.kda, 2)
+    return {"games_delta": games_delta, "wr_delta": wr_delta, "kda_delta": kda_delta, "period": period}
+
+
+def _hll_trend(snaps) -> dict | None:
+    baseline, period = _trend_baseline(snaps)
+    if baseline is None:
+        return None
+    lgd = snaps[0].game_data or {}
+    bgd = baseline.game_data or {}
+    kills_delta = pt_delta = None
+    if lgd.get("kills") is not None and bgd.get("kills") is not None:
+        kills_delta = lgd["kills"] - bgd["kills"]
+    if lgd.get("playtime_forever") is not None and bgd.get("playtime_forever") is not None:
+        pt_delta = lgd["playtime_forever"] - bgd["playtime_forever"]
+    return {"kills_delta": kills_delta, "pt_delta": pt_delta, "period": period}
+
+
+def _last_ow_session(snaps) -> dict | None:
+    """Find the most recent consecutive snapshot pair where games_played increased."""
+    ordered = list(reversed(snaps))  # oldest → newest
+    for i in range(len(ordered) - 1, 0, -1):
+        prev, curr = ordered[i - 1], ordered[i]
+        if curr.games_played is None or prev.games_played is None:
+            continue
+        delta = curr.games_played - prev.games_played
+        if delta <= 0:
+            continue
+        wins = max(0, (curr.games_won or 0) - (prev.games_won or 0))
+        losses = delta - wins
+        kda_d = round(curr.kda - prev.kda, 2) if curr.kda is not None and prev.kda is not None else None
+        end_time = curr.fetched_at if curr.fetched_at.tzinfo else curr.fetched_at.replace(tzinfo=timezone.utc)
+        return {
+            "games": delta, "wins": wins, "losses": losses,
+            "win_rate": wins / delta * 100, "kda_delta": kda_d, "end_time": end_time,
+        }
+    return None
+
+
+def _last_hll_session(snaps) -> dict | None:
+    """Find the most recent HLL session via playtime_forever delta."""
+    ordered = list(reversed(snaps))
+    for i in range(len(ordered) - 1, 0, -1):
+        prev, curr = ordered[i - 1], ordered[i]
+        pgd, cgd = prev.game_data or {}, curr.game_data or {}
+        prev_pt, curr_pt = pgd.get("playtime_forever"), cgd.get("playtime_forever")
+        if prev_pt is None or curr_pt is None:
+            continue
+        delta_minutes = curr_pt - prev_pt
+        if delta_minutes <= 0:
+            continue
+        kills_d = (cgd["kills"] - pgd["kills"]) if cgd.get("kills") is not None and pgd.get("kills") is not None else None
+        xp_d = (cgd["total_xp"] - pgd["total_xp"]) if cgd.get("total_xp") is not None and pgd.get("total_xp") is not None else None
+        end_time = curr.fetched_at if curr.fetched_at.tzinfo else curr.fetched_at.replace(tzinfo=timezone.utc)
+        return {"duration_minutes": delta_minutes, "kills_delta": kills_d, "xp_delta": xp_d, "end_time": end_time}
+    return None
+
+
 # ---------------------------------------------------------------------------
 # Embed builders — Overwatch
 # ---------------------------------------------------------------------------
 
-def build_ow_stats_embed(player: Player, snapshot: StatSnapshot) -> discord.Embed:
+def build_ow_stats_embed(player: Player, snapshot: StatSnapshot, snaps=None) -> discord.Embed:
     name = player.display_name or player.battletag
     embed = discord.Embed(title=name, color=OW_COLOR)
     embed.set_author(name=f"Overwatch 2 · {player.battletag}")
@@ -118,6 +219,36 @@ def build_ow_stats_embed(player: Player, snapshot: StatSnapshot) -> discord.Embe
     if stat_lines:
         embed.add_field(name="Overall Stats", value="\n".join(stat_lines), inline=True)
 
+    if snaps and len(snaps) >= 2:
+        trend = _ow_trend(snaps)
+        if trend:
+            trend_lines = []
+            if trend["games_delta"] is not None:
+                sign = "+" if trend["games_delta"] >= 0 else ""
+                trend_lines.append(f"**Games:** {sign}{trend['games_delta']}")
+            if trend["wr_delta"] is not None:
+                sign = "+" if trend["wr_delta"] >= 0 else ""
+                trend_lines.append(f"**Win Rate:** {sign}{trend['wr_delta']}%")
+            if trend["kda_delta"] is not None:
+                sign = "+" if trend["kda_delta"] >= 0 else ""
+                trend_lines.append(f"**KDA:** {sign}{trend['kda_delta']}")
+            if trend_lines:
+                embed.add_field(name=f"{trend['period']}D Trend", value="\n".join(trend_lines), inline=True)
+
+        session = _last_ow_session(snaps)
+        if session:
+            game_word = "game" if session["games"] == 1 else "games"
+            kda_str = ""
+            if session["kda_delta"] is not None:
+                sign = "+" if session["kda_delta"] >= 0 else ""
+                kda_str = f"\n**KDA:** {sign}{session['kda_delta']} · {_discord_timeago(session['end_time'])}"
+            session_lines = (
+                f"{session['wins']}W / {session['losses']}L ({session['games']} {game_word})\n"
+                f"**Win Rate:** {session['win_rate']:.1f}%"
+                f"{kda_str}"
+            )
+            embed.add_field(name="Last Session", value=session_lines, inline=True)
+
     if snapshot.top_heroes:
         hero_lines = []
         for h in snapshot.top_heroes[:3]:
@@ -127,15 +258,18 @@ def build_ow_stats_embed(player: Player, snapshot: StatSnapshot) -> discord.Embe
             hero_lines.append(f"**{h.get('name', h.get('hero', '?'))}:** {time_str}{wr_str}")
         embed.add_field(name="Top Heroes", value="\n".join(hero_lines), inline=False)
 
-    embed.set_footer(text=f"Last updated · {snapshot.fetched_at.strftime('%Y-%m-%d %H:%M UTC')}")
+    fa = snapshot.fetched_at
+    fa_str = fa.strftime("%Y-%m-%d %H:%M UTC")
+    fa_utc = fa if fa.tzinfo else fa.replace(tzinfo=timezone.utc)
+    embed.set_footer(text=f"Last updated · {fa_str} ({_discord_timeago(fa_utc)})")
     return embed
 
 
 # Keep name alias used elsewhere
-def build_stats_embed(player: Player, snapshot: StatSnapshot) -> discord.Embed:
+def build_stats_embed(player: Player, snapshot: StatSnapshot, snaps=None) -> discord.Embed:
     if player.game == "hell_let_loose":
-        return build_hll_stats_embed(player, snapshot)
-    return build_ow_stats_embed(player, snapshot)
+        return build_hll_stats_embed(player, snapshot, snaps)
+    return build_ow_stats_embed(player, snapshot, snaps)
 
 
 def build_game_report_embed(
@@ -260,7 +394,7 @@ def build_stats_update_embed(
 # Embed builders — Hell Let Loose
 # ---------------------------------------------------------------------------
 
-def build_hll_stats_embed(player: Player, snapshot: StatSnapshot) -> discord.Embed:
+def build_hll_stats_embed(player: Player, snapshot: StatSnapshot, snaps=None) -> discord.Embed:
     name = player.display_name or player.battletag
     embed = discord.Embed(title=name, color=HLL_COLOR)
     embed.set_author(name=f"Hell Let Loose · {player.battletag}")
@@ -296,7 +430,38 @@ def build_hll_stats_embed(player: Player, snapshot: StatSnapshot) -> discord.Emb
     if info_lines:
         embed.add_field(name="Profile", value="\n".join(info_lines), inline=True)
 
-    embed.set_footer(text=f"Last updated · {snapshot.fetched_at.strftime('%Y-%m-%d %H:%M UTC')}")
+    if snaps and len(snaps) >= 2:
+        trend = _hll_trend(snaps)
+        if trend:
+            trend_lines = []
+            if trend["kills_delta"] is not None:
+                sign = "+" if trend["kills_delta"] >= 0 else ""
+                trend_lines.append(f"**Kills:** {sign}{trend['kills_delta']:,}")
+            if trend["pt_delta"] is not None:
+                sign = "+" if trend["pt_delta"] >= 0 else ""
+                th, tm = divmod(abs(trend["pt_delta"]), 60)
+                pt_str = f"{th}h {tm}m" if th else f"{tm}m"
+                trend_lines.append(f"**Playtime:** {sign}{pt_str}")
+            if trend_lines:
+                embed.add_field(name=f"{trend['period']}D Trend", value="\n".join(trend_lines), inline=True)
+
+        session = _last_hll_session(snaps)
+        if session:
+            sh, sm = divmod(session["duration_minutes"], 60)
+            dur_str = f"{sh}h {sm}m" if sh else f"{sm}m"
+            sess_lines = [f"**Duration:** {dur_str}"]
+            if session["kills_delta"] is not None:
+                sess_lines.append(f"**Kills:** +{session['kills_delta']:,}")
+            if session["xp_delta"] is not None and session["xp_delta"] > 0:
+                sess_lines.append(f"**XP:** +{session['xp_delta']:,}  ·  {_discord_timeago(session['end_time'])}")
+            elif sess_lines:
+                sess_lines[-1] += f"  ·  {_discord_timeago(session['end_time'])}"
+            embed.add_field(name="Last Session", value="\n".join(sess_lines), inline=True)
+
+    fa = snapshot.fetched_at
+    fa_str = fa.strftime("%Y-%m-%d %H:%M UTC")
+    fa_utc = fa if fa.tzinfo else fa.replace(tzinfo=timezone.utc)
+    embed.set_footer(text=f"Last updated · {fa_str} ({_discord_timeago(fa_utc)})")
     return embed
 
 
@@ -664,15 +829,16 @@ async def cmd_stats(interaction: discord.Interaction, player_id: str):
         result = await session.execute(select(Player).where(Player.battletag == player_id))
         player = result.scalar_one_or_none()
         if player:
+            cutoff = datetime.now(timezone.utc) - timedelta(days=30)
             snap_result = await session.execute(
                 select(StatSnapshot)
                 .where(StatSnapshot.player_id == player.id)
+                .where(StatSnapshot.fetched_at >= cutoff)
                 .order_by(StatSnapshot.fetched_at.desc())
-                .limit(1)
             )
-            snapshot = snap_result.scalar_one_or_none()
-            if snapshot:
-                embed = build_stats_embed(player, snapshot)
+            snaps = snap_result.scalars().all()
+            if snaps:
+                embed = build_stats_embed(player, snaps[0], snaps)
                 await interaction.followup.send(embed=embed)
                 return
 
@@ -724,6 +890,18 @@ async def cmd_players(interaction: discord.Interaction):
         result = await session.execute(select(Player).order_by(Player.game, Player.added_at))
         players = result.scalars().all()
 
+        last_seen: dict[int, datetime] = {}
+        for p in players:
+            snap_result = await session.execute(
+                select(StatSnapshot.fetched_at)
+                .where(StatSnapshot.player_id == p.id)
+                .order_by(StatSnapshot.fetched_at.desc())
+                .limit(1)
+            )
+            fa = snap_result.scalar_one_or_none()
+            if fa is not None:
+                last_seen[p.id] = fa
+
     if not players:
         await interaction.response.send_message(
             "No players tracked yet. Use `/add_player` to get started."
@@ -733,13 +911,16 @@ async def cmd_players(interaction: discord.Interaction):
     ow_players = [p for p in players if p.game == "overwatch"]
     hll_players = [p for p in players if p.game == "hell_let_loose"]
 
+    def _player_line(p: Player) -> str:
+        fa = last_seen.get(p.id)
+        ago = f" · {_discord_timeago(fa)}" if fa else ""
+        return f"• **{p.display_name or p.battletag}** (`{p.battletag}`){ago}"
+
     embed = discord.Embed(title=f"Tracked Players ({len(players)})", color=OW_COLOR)
     if ow_players:
-        lines = [f"• **{p.display_name or p.battletag}** (`{p.battletag}`)" for p in ow_players]
-        embed.add_field(name="Overwatch 2", value="\n".join(lines), inline=False)
+        embed.add_field(name="Overwatch 2", value="\n".join(_player_line(p) for p in ow_players), inline=False)
     if hll_players:
-        lines = [f"• **{p.display_name or p.battletag}** (`{p.battletag}`)" for p in hll_players]
-        embed.add_field(name="Hell Let Loose", value="\n".join(lines), inline=False)
+        embed.add_field(name="Hell Let Loose", value="\n".join(_player_line(p) for p in hll_players), inline=False)
 
     await interaction.response.send_message(embed=embed)
 
