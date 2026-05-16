@@ -9,6 +9,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 from sqlalchemy import select, or_
+from sqlalchemy.exc import OperationalError
 
 from database import AsyncSessionLocal
 from models import DiscordChannel, Player, Setting, StatSnapshot
@@ -599,9 +600,12 @@ def build_compare_embed(p1: Player, s1: StatSnapshot, p2: Player, s2: StatSnapsh
 # ---------------------------------------------------------------------------
 
 async def _get_setting(key: str) -> str | None:
-    async with AsyncSessionLocal() as session:
-        row = await session.get(Setting, key)
-        return row.value if row else None
+    try:
+        async with AsyncSessionLocal() as session:
+            row = await session.get(Setting, key)
+            return row.value if row else None
+    except OperationalError:
+        return None
 
 
 async def _set_setting(key: str, value: str | None) -> None:

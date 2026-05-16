@@ -171,6 +171,9 @@ async def import_db(file: UploadFile, _: None = Depends(_require_token)) -> JSON
         finally:
             scheduler.resume()
 
+        from database import init_db
+        await init_db()
+
         return JSONResponse({"status": "imported", "path": str(_DB_PATH)})
     except HTTPException:
         raise
