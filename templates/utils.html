@@ -36,6 +36,38 @@
 <!-- Utilities grid -->
 <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
 
+  <!-- Version check — full width -->
+  <div class="md:col-span-2" style="background:#111111;border:1px solid #272727;border-left:3px solid #555;">
+    <div class="p-5">
+      <div class="flex items-center justify-between mb-4">
+        <div>
+          <div class="text-[10px] text-gray-600 tracking-[0.3em] uppercase mb-1">SOFTWARE</div>
+          <h2 class="text-sm font-bold text-white">VERSION</h2>
+        </div>
+        <div class="flex items-center gap-2">
+          <span class="text-[10px] text-gray-700 tracking-wider">RUNNING {{ app_version }}</span>
+          <button onclick="checkVersion()" id="version-btn"
+            style="border:1px solid #333;"
+            class="px-4 py-1.5 text-xs font-bold uppercase tracking-wider text-gray-500 hover:text-gray-200 hover:border-[#555] transition-colors">
+            CHECK FOR UPDATES
+          </button>
+        </div>
+      </div>
+      <div id="version-result" class="text-xs text-gray-700">// AWAITING INPUT</div>
+      <div id="version-update-cmd" class="hidden mt-3">
+        <div class="text-[10px] text-gray-600 tracking-[0.2em] uppercase mb-1">UPDATE COMMAND</div>
+        <div class="flex items-center gap-2">
+          <code id="update-cmd-text" style="background:#0a0a0a;border:1px solid #333;" class="px-3 py-1.5 text-[11px] text-gray-400 flex-1">docker compose pull &amp;&amp; docker compose up -d</code>
+          <button onclick="copyUpdateCmd()" id="copy-btn"
+            style="border:1px solid #333;"
+            class="px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-gray-500 hover:text-gray-200 hover:border-[#555] transition-colors whitespace-nowrap">
+            COPY
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- Health check — full width -->
   <div class="md:col-span-2" style="background:#111111;border:1px solid #272727;border-left:3px solid #555;">
     <div class="p-5">
@@ -287,6 +319,44 @@
     } catch (e) {
       el.innerHTML = err('● ' + e.message);
     }
+  }
+
+  async function checkVersion() {
+    const btn = document.getElementById('version-btn');
+    const res_el = document.getElementById('version-result');
+    const cmd_el = document.getElementById('version-update-cmd');
+    btn.textContent = 'CHECKING…';
+    btn.disabled = true;
+    res_el.innerHTML = dim('// QUERYING GITHUB…');
+    cmd_el.classList.add('hidden');
+    try {
+      const res = await apiCall('/utils/version');
+      if (await handleApiError(res, 'version-result')) { btn.textContent = 'CHECK FOR UPDATES'; btn.disabled = false; return; }
+      const d = await res.json();
+      if (d.error) {
+        res_el.innerHTML = err('● COULD NOT REACH GITHUB API — ' + d.error);
+      } else if (d.outdated) {
+        const cached = d.cached ? ` ${dim('// CACHED')}` : '';
+        res_el.innerHTML = err(`● UPDATE AVAILABLE — ${d.current} → ${d.latest}`) + cached;
+        cmd_el.classList.remove('hidden');
+      } else {
+        const cached = d.cached ? ` ${dim('// CACHED')}` : '';
+        res_el.innerHTML = ok(`● UP TO DATE — ${d.current}`) + cached;
+      }
+    } catch (e) {
+      res_el.innerHTML = err('● ' + e.message);
+    }
+    btn.textContent = 'CHECK FOR UPDATES';
+    btn.disabled = false;
+  }
+
+  function copyUpdateCmd() {
+    const cmd = 'docker compose pull && docker compose up -d';
+    navigator.clipboard.writeText(cmd).then(() => {
+      const btn = document.getElementById('copy-btn');
+      btn.textContent = 'COPIED';
+      setTimeout(() => { btn.textContent = 'COPY'; }, 2000);
+    });
   }
 
   async function doPoll() {

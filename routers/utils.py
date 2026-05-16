@@ -2,9 +2,12 @@ import aiosqlite
 import asyncio
 import io
 import os
+import re
 import sqlite3
 import time
 from pathlib import Path
+
+import httpx
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, UploadFile
 from fastapi.responses import JSONResponse, StreamingResponse
@@ -21,6 +24,9 @@ router = APIRouter(prefix="/utils", tags=["utils"])
 _UTILS_TOKEN = os.getenv("UTILS_TOKEN", "")
 _DB_PATH = Path(DATABASE_URL.split("///")[-1])
 _start_time = time.time()
+
+_version_cache: dict = {"data": None, "fetched_at": 0.0}
+_VERSION_TTL = 3600
 
 
 @router.get("", include_in_schema=False)
@@ -39,6 +45,35 @@ def _require_token(
         provided = authorization.removeprefix("Bearer ")
     if provided != _UTILS_TOKEN:
         raise HTTPException(403, detail="Invalid token")
+
+
+@router.get("/version")
+async def check_version(_: None = Depends(_require_token)) -> JSONResponse:
+    now = time.time()
+    if _version_cache["data"] and now - _version_cache["fetched_at"] < _VERSION_TTL:
+        return JSONResponse({**_version_cache["data"], "cached": True})
+
+    current = os.getenv("APP_VERSION", "dev").strip()
+    try:
+        async with httpx.AsyncClient(timeout=8) as client:
+            r = await client.get(
+                "https://api.github.com/repos/bennerrrr/ow-stats/releases/latest",
+                headers={"Accept": "application/vnd.github+json"},
+            )
+            r.raise_for_status()
+            latest = r.json()["tag_name"]
+    except Exception as exc:
+        return JSONResponse({"error": str(exc)}, status_code=502)
+
+    def _sv(tag: str) -> tuple:
+        m = re.match(r"v?(\d+)\.(\d+)\.(\d+)", tag)
+        return tuple(int(x) for x in m.groups()) if m else (0, 0, 0)
+
+    outdated = _sv(latest) > _sv(current)
+    data = {"current": current, "latest": latest, "outdated": outdated}
+    _version_cache["data"] = data
+    _version_cache["fetched_at"] = now
+    return JSONResponse({**data, "cached": False})
 
 
 @router.get("/health")
