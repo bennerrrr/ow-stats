@@ -34,3 +34,8 @@ async def init_db():
                 await conn.execute(text(stmt))
             except Exception:
                 pass  # Column already exists
+        for stmt in [
+            "CREATE INDEX IF NOT EXISTS idx_stat_snapshots_player_fetched ON stat_snapshots(player_id, fetched_at DESC)",
+            "CREATE INDEX IF NOT EXISTS idx_players_game ON players(game)",
+        ]:
+            await conn.execute(text(stmt))

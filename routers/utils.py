@@ -18,7 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from database import DATABASE_URL, AsyncSessionLocal, engine, get_db
 from discord_bot import bot, _get_setting, _set_setting, send_preview_dm
 from models import DiscordChannel, Player
-from scheduler import poll_all_players, scheduler
+from scheduler import poll_all_players, weekly_digest, scheduler
 from _templates import templates
 
 router = APIRouter(prefix="/utils", tags=["utils"])
@@ -199,6 +199,12 @@ async def vacuum_db(_: None = Depends(_require_token)) -> JSONResponse:
 async def force_poll(_: None = Depends(_require_token)) -> JSONResponse:
     await poll_all_players()
     return JSONResponse({"status": "ok", "message": "Poll complete"})
+
+
+@router.post("/digest")
+async def force_digest(_: None = Depends(_require_token)) -> JSONResponse:
+    await weekly_digest()
+    return JSONResponse({"status": "ok", "message": "Digest sent"})
 
 
 @router.get("/discord/channels")

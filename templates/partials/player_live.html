@@ -264,9 +264,18 @@
 <!-- Session History -->
 {% if sessions %}
 <section class="mb-8">
-  <div class="hud-section-header">
-    <h2>⏱ Session History</h2>
-    <span class="text-xs font-mono text-gray-600">({{ sessions | length }})</span>
+  <div class="flex items-center justify-between mb-3">
+    <div class="hud-section-header mb-0">
+      <h2>⏱ Session History</h2>
+      <span class="text-xs font-mono text-gray-600">({{ sessions | length }})</span>
+    </div>
+    <div class="flex gap-1">
+      {% for days, label in [(7,'7D'),(30,'30D'),(0,'ALL')] %}
+      <button onclick="filterSessions('hll-sessions', {{ days }})" data-sfilter-hll="{{ days }}"
+        style="border:1px solid {% if not loop.last %}transparent{% else %}#8FBC4A{% endif %};color:{% if not loop.last %}#555{% else %}#8FBC4A{% endif %};"
+        class="text-[10px] px-2 py-0.5 uppercase tracking-wider transition-colors">{{ label }}</button>
+      {% endfor %}
+    </div>
   </div>
   <div class="overflow-x-auto" style="background:#111111;border:1px solid #272727;">
     <table class="w-full text-sm">
@@ -278,9 +287,9 @@
           <th class="px-4 py-3 text-right tracking-wider">XP Gained</th>
         </tr>
       </thead>
-      <tbody class="divide-y divide-[#1a1a1a]">
+      <tbody id="hll-sessions" class="divide-y divide-[#1a1a1a]">
         {% for sess in sessions %}
-        <tr class="transition-colors {% if loop.first %}bg-[#141414]{% endif %}">
+        <tr class="transition-colors {% if loop.first %}bg-[#141414]{% endif %}" data-ts="{{ sess.ts_iso }}">
           <td class="px-4 py-3 text-gray-400 whitespace-nowrap font-mono text-xs">
             {{ sess.start }}{% if loop.first %} <span class="ml-1 text-hll-bright text-xs">LATEST</span>{% endif %}
           </td>
@@ -572,9 +581,18 @@
 <!-- Session History -->
 {% if sessions %}
 <section class="mb-8">
-  <div class="hud-section-header">
-    <h2>⚡ Session History</h2>
-    <span class="text-xs font-mono text-gray-600">({{ sessions | length }})</span>
+  <div class="flex items-center justify-between mb-3">
+    <div class="hud-section-header mb-0">
+      <h2>⚡ Session History</h2>
+      <span class="text-xs font-mono text-gray-600">({{ sessions | length }})</span>
+    </div>
+    <div class="flex gap-1">
+      {% for days, label in [(7,'7D'),(30,'30D'),(0,'ALL')] %}
+      <button onclick="filterSessions('ow-sessions', {{ days }})" data-sfilter-ow="{{ days }}"
+        style="border:1px solid {% if not loop.last %}transparent{% else %}#F99E1A{% endif %};color:{% if not loop.last %}#555{% else %}#F99E1A{% endif %};"
+        class="text-[10px] px-2 py-0.5 uppercase tracking-wider transition-colors">{{ label }}</button>
+      {% endfor %}
+    </div>
   </div>
   <div class="overflow-x-auto" style="background:#111111;border:1px solid #272727;">
     <table class="w-full text-sm">
@@ -587,9 +605,9 @@
           <th class="px-4 py-3 text-right tracking-wider">KDA Δ</th>
         </tr>
       </thead>
-      <tbody class="divide-y divide-[#1a1a1a]">
+      <tbody id="ow-sessions" class="divide-y divide-[#1a1a1a]">
         {% for sess in sessions %}
-        <tr class="transition-colors {% if loop.first %}bg-[#141414]{% endif %}">
+        <tr class="transition-colors {% if loop.first %}bg-[#141414]{% endif %}" data-ts="{{ sess.ts_iso }}">
           <td class="px-4 py-3 text-gray-400 whitespace-nowrap font-mono text-xs">
             {{ sess.start }}{% if loop.first %} <span class="ml-1 text-ow-orange text-xs">LATEST</span>{% endif %}
           </td>
@@ -714,3 +732,22 @@
 
 {% endif %}{# end OW/HLL branch #}
 {% endif %}{# end snapshots guard #}
+
+<script>
+window.filterSessions = function (tbodyId, days) {
+  const tbody = document.getElementById(tbodyId);
+  if (!tbody) return;
+  const cutoff = days > 0 ? Date.now() - days * 86400000 : 0;
+  Array.from(tbody.querySelectorAll('tr')).forEach(function (row) {
+    row.style.display = (!days || new Date(row.dataset.ts).getTime() >= cutoff) ? '' : 'none';
+  });
+  const prefix = tbodyId === 'hll-sessions' ? 'hll' : 'ow';
+  const accentColor = tbodyId === 'hll-sessions' ? '#8FBC4A' : '#F99E1A';
+  const attr = 'data-sfilter-' + prefix;
+  document.querySelectorAll('[' + attr + ']').forEach(function (btn) {
+    const active = Number(btn.getAttribute(attr)) === days;
+    btn.style.borderColor = active ? accentColor : 'transparent';
+    btn.style.color = active ? accentColor : '#555';
+  });
+};
+</script>

@@ -1,0 +1,239 @@
+{% extends "base.html" %}
+{% block title %}Leaderboard — STATS.CMD{% endblock %}
+
+{% block content %}
+
+<div class="flex items-end gap-4 mb-5">
+  <div>
+    <div class="text-xs text-gray-600 tracking-[0.25em] uppercase mb-1">// RANKINGS</div>
+    <h1 class="text-xl font-bold text-white tracking-wide">⊞ LEADERBOARD</h1>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════
+     OVERWATCH 2
+     ═══════════════════════════════ -->
+{% if ow_rows %}
+<section class="mb-10">
+  <div class="hud-section-header">
+    <h2>⚔ Overwatch 2</h2>
+    <span class="text-[10px] text-gray-700">{{ ow_rows | length }} OPERATOR{{ 'S' if ow_rows | length != 1 }}</span>
+  </div>
+
+  <!-- Sort controls -->
+  <div class="flex items-center gap-1 mb-3">
+    <span class="text-[10px] text-gray-700 uppercase tracking-wider mr-1">SORT</span>
+    {% for key, label in [('wr','WIN RATE'),('kda','KDA'),('games','GAMES')] %}
+    <button onclick="sortTable('ow-tbody', '{{ key }}')" id="ow-sort-{{ key }}"
+      style="border:1px solid {% if loop.first %}#F99E1A{% else %}#333{% endif %};color:{% if loop.first %}#F99E1A{% else %}#555{% endif %};"
+      class="text-[10px] px-2 py-0.5 uppercase tracking-wider transition-colors">{{ label }}</button>
+    {% endfor %}
+  </div>
+
+  <div class="overflow-x-auto" style="background:#111111;border:1px solid #272727;">
+    <table class="w-full text-xs">
+      <thead style="background:#1a1a1a;">
+        <tr>
+          <th class="px-4 py-3 text-left text-gray-600 uppercase tracking-wider w-8">#</th>
+          <th class="px-4 py-3 text-left text-gray-600 uppercase tracking-wider">Player</th>
+          <th class="px-4 py-3 text-right text-gray-600 uppercase tracking-wider" id="ow-th-wr">Win Rate</th>
+          <th class="px-4 py-3 text-right text-gray-600 uppercase tracking-wider" id="ow-th-kda">KDA</th>
+          <th class="px-4 py-3 text-right text-gray-600 uppercase tracking-wider" id="ow-th-games">Games</th>
+          <th class="px-4 py-3 text-left text-gray-600 uppercase tracking-wider hidden sm:table-cell">Top Hero</th>
+          <th class="px-2 py-3 w-8"></th>
+        </tr>
+      </thead>
+      <tbody id="ow-tbody" class="divide-y divide-[#1a1a1a]">
+        {% for row in ow_rows %}
+        <tr class="transition-colors hover:bg-[#161616]"
+          data-wr="{{ row.win_rate if row.win_rate is not none else -1 }}"
+          data-kda="{{ row.kda if row.kda is not none else -1 }}"
+          data-games="{{ row.games if row.games is not none else -1 }}">
+          <td class="px-4 py-3 text-gray-700 font-mono">
+            <span class="rank-num">{{ loop.index }}</span>
+          </td>
+          <td class="px-4 py-3">
+            <a href="/players/{{ row.battletag | urltag }}" class="flex items-center gap-2 hover:text-ow-orange transition-colors">
+              {% if row.avatar_url %}
+              <img src="{{ row.avatar_url }}" class="w-6 h-6 object-cover shrink-0" style="border:1px solid #333;" />
+              {% else %}
+              <div class="w-6 h-6 flex items-center justify-center text-ow-orange font-bold text-[10px] shrink-0" style="background:#1a1a1a;border:1px solid #333;">
+                {{ row.name[0].upper() }}
+              </div>
+              {% endif %}
+              <span class="font-bold text-white truncate">{{ row.name }}</span>
+            </a>
+          </td>
+          <td class="px-4 py-3 text-right font-mono font-bold
+            {% if row.win_rate is not none and row.win_rate >= 55 %}text-[#44ff88]
+            {% elif row.win_rate is not none and row.win_rate < 45 %}text-red-400
+            {% elif row.win_rate is not none %}text-ow-orange
+            {% else %}text-gray-700{% endif %}">
+            {% if row.win_rate is not none %}{{ row.win_rate }}%{% else %}—{% endif %}
+          </td>
+          <td class="px-4 py-3 text-right font-mono
+            {% if row.kda is not none and row.kda >= 3.0 %}text-ow-cyan
+            {% elif row.kda is not none and row.kda < 2.0 %}text-red-400
+            {% elif row.kda is not none %}text-gray-300
+            {% else %}text-gray-700{% endif %}">
+            {% if row.kda is not none %}{{ "%.2f"|format(row.kda) }}{% else %}—{% endif %}
+          </td>
+          <td class="px-4 py-3 text-right font-mono text-gray-400">
+            {{ row.games if row.games is not none else '—' }}
+          </td>
+          <td class="px-4 py-3 text-gray-600 hidden sm:table-cell">{{ row.top_hero or '—' }}</td>
+          <td class="px-2 py-3">
+            <button onclick="pickCompare('{{ row.battletag }}')" title="Compare"
+              class="compare-btn text-[10px] text-gray-700 hover:text-ow-orange transition-colors px-1"
+              data-tag="{{ row.battletag }}">⚔</button>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endif %}
+
+<!-- ═══════════════════════════════
+     HELL LET LOOSE
+     ═══════════════════════════════ -->
+{% if hll_rows %}
+<section class="mb-10">
+  <div class="hud-section-header">
+    <h2>🪖 Hell Let Loose</h2>
+    <span class="text-[10px] text-gray-700">{{ hll_rows | length }} OPERATOR{{ 'S' if hll_rows | length != 1 }}</span>
+  </div>
+
+  <!-- Sort controls -->
+  <div class="flex items-center gap-1 mb-3">
+    <span class="text-[10px] text-gray-700 uppercase tracking-wider mr-1">SORT</span>
+    {% for key, label in [('kills','KILLS'),('kph','K/HR'),('pt','PLAYTIME')] %}
+    <button onclick="sortTable('hll-tbody', '{{ key }}')" id="hll-sort-{{ key }}"
+      style="border:1px solid {% if loop.first %}#8FBC4A{% else %}#333{% endif %};color:{% if loop.first %}#8FBC4A{% else %}#555{% endif %};"
+      class="text-[10px] px-2 py-0.5 uppercase tracking-wider transition-colors">{{ label }}</button>
+    {% endfor %}
+  </div>
+
+  <div class="overflow-x-auto" style="background:#111111;border:1px solid #272727;">
+    <table class="w-full text-xs">
+      <thead style="background:#1a1a1a;">
+        <tr>
+          <th class="px-4 py-3 text-left text-gray-600 uppercase tracking-wider w-8">#</th>
+          <th class="px-4 py-3 text-left text-gray-600 uppercase tracking-wider">Player</th>
+          <th class="px-4 py-3 text-right text-gray-600 uppercase tracking-wider">Kills</th>
+          <th class="px-4 py-3 text-right text-gray-600 uppercase tracking-wider">K/HR</th>
+          <th class="px-4 py-3 text-right text-gray-600 uppercase tracking-wider">Playtime</th>
+          <th class="px-4 py-3 text-right text-gray-600 uppercase tracking-wider hidden sm:table-cell">HS%</th>
+          <th class="px-2 py-3 w-8"></th>
+        </tr>
+      </thead>
+      <tbody id="hll-tbody" class="divide-y divide-[#1a1a1a]">
+        {% for row in hll_rows %}
+        <tr class="transition-colors hover:bg-[#161616]"
+          data-kills="{{ row.kills if row.kills is not none else -1 }}"
+          data-kph="{{ row.kph if row.kph is not none else -1 }}"
+          data-pt="{{ row.pt_hours if row.pt_hours is not none else -1 }}">
+          <td class="px-4 py-3 text-gray-700 font-mono">
+            <span class="rank-num">{{ loop.index }}</span>
+          </td>
+          <td class="px-4 py-3">
+            <a href="/players/{{ row.battletag | urltag }}" class="flex items-center gap-2 hover:text-hll-bright transition-colors">
+              {% if row.avatar_url %}
+              <img src="{{ row.avatar_url }}" class="w-6 h-6 object-cover shrink-0" style="border:1px solid #333;" />
+              {% else %}
+              <div class="w-6 h-6 flex items-center justify-center text-hll-bright font-bold text-[10px] shrink-0" style="background:#1a1a1a;border:1px solid #333;">
+                {{ row.name[0].upper() }}
+              </div>
+              {% endif %}
+              <span class="font-bold text-white truncate">{{ row.name }}</span>
+            </a>
+          </td>
+          <td class="px-4 py-3 text-right font-mono font-bold text-hll-bright">
+            {% if row.kills is not none %}{{ "{:,}".format(row.kills) }}{% else %}—{% endif %}
+          </td>
+          <td class="px-4 py-3 text-right font-mono
+            {% if row.kph is not none and row.kph >= 20 %}text-ow-cyan{% elif row.kph is not none %}text-gray-300{% else %}text-gray-700{% endif %}">
+            {% if row.kph is not none %}{{ row.kph }}{% else %}—{% endif %}
+          </td>
+          <td class="px-4 py-3 text-right font-mono text-gray-400">
+            {% if row.pt_hours is not none %}{{ row.pt_hours }}h{% else %}—{% endif %}
+          </td>
+          <td class="px-4 py-3 text-right font-mono hidden sm:table-cell
+            {% if row.hs_pct is not none and row.hs_pct >= 25 %}text-green-400
+            {% elif row.hs_pct is not none and row.hs_pct < 15 %}text-red-400
+            {% elif row.hs_pct is not none %}text-gray-400
+            {% else %}text-gray-700{% endif %}">
+            {% if row.hs_pct is not none %}{{ row.hs_pct }}%{% else %}—{% endif %}
+          </td>
+          <td class="px-2 py-3">
+            <button onclick="pickCompare('{{ row.battletag }}')" title="Compare"
+              class="compare-btn text-[10px] text-gray-700 hover:text-hll-bright transition-colors px-1"
+              data-tag="{{ row.battletag }}">⚔</button>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endif %}
+
+{% if not ow_rows and not hll_rows %}
+<div style="background:#111111;border:1px solid #272727;border-left:3px solid #333;" class="px-6 py-12 text-center">
+  <p class="text-gray-600 text-xs uppercase tracking-wider">NO OPERATORS TRACKED</p>
+  <p class="text-gray-700 text-xs mt-2">Add players on the <a href="/overwatch" class="hover:text-ow-orange transition-colors">OW2</a> or <a href="/hll" class="hover:text-hll-bright transition-colors">HLL</a> pages.</p>
+</div>
+{% endif %}
+
+<script>
+(function () {
+  const ACCENTS = { ow: '#F99E1A', hll: '#8FBC4A' };
+  let _pending = null;
+
+  window.sortTable = function (tbodyId, key) {
+    const tbody = document.getElementById(tbodyId);
+    if (!tbody) return;
+    const game = tbodyId.startsWith('ow') ? 'ow' : 'hll';
+    const rows = Array.from(tbody.querySelectorAll('tr'));
+    rows.sort(function (a, b) {
+      return parseFloat(b.dataset[key] ?? -1) - parseFloat(a.dataset[key] ?? -1);
+    });
+    rows.forEach(function (row, i) {
+      row.querySelector('.rank-num').textContent = i + 1;
+      tbody.appendChild(row);
+    });
+    const accent = ACCENTS[game];
+    document.querySelectorAll('[id^="' + game + '-sort-"]').forEach(function (btn) {
+      const active = btn.id === game + '-sort-' + key;
+      btn.style.borderColor = active ? accent : '#333';
+      btn.style.color = active ? accent : '#555';
+    });
+  };
+
+  window.pickCompare = function (tag) {
+    if (!_pending) {
+      _pending = tag;
+      document.querySelectorAll('.compare-btn').forEach(function (btn) {
+        if (btn.dataset.tag === tag) {
+          btn.textContent = '✓';
+          btn.style.color = '#00D4FF';
+        } else {
+          btn.textContent = 'VS?';
+          btn.style.color = '#555';
+        }
+      });
+    } else if (_pending === tag) {
+      _pending = null;
+      document.querySelectorAll('.compare-btn').forEach(function (btn) {
+        btn.textContent = '⚔';
+        btn.style.color = '';
+      });
+    } else {
+      window.location.href = '/compare?p1=' + encodeURIComponent(_pending) + '&p2=' + encodeURIComponent(tag);
+    }
+  };
+})();
+</script>
+
+{% endblock %}

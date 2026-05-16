@@ -4,7 +4,7 @@ import re
 from datetime import datetime, timezone, timedelta
 from urllib.parse import quote
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
-from fastapi import APIRouter, Depends, Request, Form, HTTPException
+from fastapi import APIRouter, Depends, Request, Form, Query, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -143,9 +143,11 @@ def _compute_sessions(snapshots) -> list[dict]:
         session_wr = round(delta_wins / delta_games * 100, 1)
         kda_delta = round(curr.kda - prev.kda, 2) if (curr.kda is not None and prev.kda is not None) else None
 
+        ts = prev.fetched_at if prev.fetched_at.tzinfo else prev.fetched_at.replace(tzinfo=timezone.utc)
         sessions.append({
             "start": _to_display_tz(prev.fetched_at).strftime("%b %d %H:%M %Z"),
             "end": _to_display_tz(curr.fetched_at).strftime("%b %d %H:%M %Z"),
+            "ts_iso": ts.isoformat(),
             "games": delta_games,
             "wins": delta_wins,
             "losses": delta_losses,
@@ -175,8 +177,10 @@ def _compute_hll_sessions(snapshots) -> list[dict]:
         prev_xp = pgd.get("total_xp")
         curr_xp = cgd.get("total_xp")
         xp_delta = (curr_xp - prev_xp) if (curr_xp is not None and prev_xp is not None) else None
+        ts = prev.fetched_at if prev.fetched_at.tzinfo else prev.fetched_at.replace(tzinfo=timezone.utc)
         sessions.append({
             "start": _to_display_tz(prev.fetched_at).strftime("%b %d %H:%M %Z"),
+            "ts_iso": ts.isoformat(),
             "duration": _fmt_duration(delta_minutes * 60),
             "duration_minutes": delta_minutes,
             "kills_delta": kills_delta,
@@ -339,6 +343,109 @@ def _compute_hll_trend(snaps) -> dict | None:
     return {"kills_delta": kills_delta, "pt_delta": pt_delta, "period": period}
 
 
+@router.get("/compare", response_class=HTMLResponse)
+async def compare_players(
+    request: Request,
+    p1: str = Query(default=""),
+    p2: str = Query(default=""),
+    db: AsyncSession = Depends(get_db),
+):
+    all_result = await db.execute(select(Player).order_by(Player.added_at))
+    all_players = all_result.scalars().all()
+
+    ctx: dict = {"request": request, "all_players": all_players, "player1": None, "player2": None, "error": None}
+
+    if not p1 or not p2:
+        return templates.TemplateResponse("compare.html", ctx)
+
+    r1 = await db.execute(select(Player).where(Player.battletag == p1))
+    r2 = await db.execute(select(Player).where(Player.battletag == p2))
+    player1 = r1.scalar_one_or_none()
+    player2 = r2.scalar_one_or_none()
+
+    if not player1 or not player2:
+        ctx["error"] = "One or both players not found."
+        return templates.TemplateResponse("compare.html", ctx)
+
+    if player1.game != player2.game:
+        ctx["error"] = "Players must be from the same game to compare."
+        ctx["player1"] = player1
+        ctx["player2"] = player2
+        return templates.TemplateResponse("compare.html", ctx)
+
+    s1_result = await db.execute(
+        select(StatSnapshot).where(StatSnapshot.player_id == player1.id)
+        .order_by(StatSnapshot.fetched_at.desc()).limit(1)
+    )
+    s2_result = await db.execute(
+        select(StatSnapshot).where(StatSnapshot.player_id == player2.id)
+        .order_by(StatSnapshot.fetched_at.desc()).limit(1)
+    )
+    snap1 = s1_result.scalar_one_or_none()
+    snap2 = s2_result.scalar_one_or_none()
+
+    ctx.update({"player1": player1, "player2": player2, "snap1": snap1, "snap2": snap2})
+    return templates.TemplateResponse("compare.html", ctx)
+
+
+@router.get("/leaderboard", response_class=HTMLResponse)
+async def leaderboard(request: Request, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(Player).order_by(Player.added_at))
+    players = result.scalars().all()
+
+    ow_rows = []
+    hll_rows = []
+    for player in players:
+        snap_result = await db.execute(
+            select(StatSnapshot)
+            .where(StatSnapshot.player_id == player.id)
+            .order_by(StatSnapshot.fetched_at.desc())
+            .limit(1)
+        )
+        snap = snap_result.scalar_one_or_none()
+        name = player.display_name or player.battletag.split("#")[0]
+        if player.game == "hell_let_loose":
+            gd = (snap.game_data or {}) if snap else {}
+            kills = gd.get("kills")
+            pt = gd.get("playtime_forever")
+            hs = gd.get("headshots")
+            kph = round(kills / (pt / 60), 1) if (kills and pt and pt > 0) else None
+            hs_pct = round(hs / kills * 100, 1) if (hs is not None and kills) else None
+            hll_rows.append({
+                "battletag": player.battletag,
+                "name": name,
+                "avatar_url": player.avatar_url,
+                "kills": kills,
+                "kph": kph,
+                "pt_hours": round(pt / 60, 1) if pt else None,
+                "hs_pct": hs_pct,
+                "fetched_at": snap.fetched_at if snap else None,
+            })
+        else:
+            wr = round(snap.win_rate * 100, 1) if (snap and snap.win_rate is not None) else None
+            kda = snap.kda if snap else None
+            top_hero = (snap.top_heroes or [None])[0] if snap else None
+            ow_rows.append({
+                "battletag": player.battletag,
+                "name": name,
+                "avatar_url": player.avatar_url,
+                "win_rate": wr,
+                "kda": kda,
+                "games": snap.games_played if snap else None,
+                "top_hero": top_hero.get("name") if top_hero else None,
+                "fetched_at": snap.fetched_at if snap else None,
+            })
+
+    ow_rows.sort(key=lambda r: r["win_rate"] if r["win_rate"] is not None else -1, reverse=True)
+    hll_rows.sort(key=lambda r: r["kills"] if r["kills"] is not None else -1, reverse=True)
+
+    return templates.TemplateResponse("leaderboard.html", {
+        "request": request,
+        "ow_rows": ow_rows,
+        "hll_rows": hll_rows,
+    })
+
+
 @router.get("/", response_class=HTMLResponse)
 async def index(request: Request, db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(Player).order_by(Player.added_at))
@@ -480,7 +587,7 @@ async def _add_ow_player_web(battletag: str, db: AsyncSession):
     await db.commit()
     await db.refresh(player)
     await snapshot_player(battletag)
-    return RedirectResponse("/overwatch", status_code=303)
+    return RedirectResponse("/overwatch?added=1", status_code=303)
 
 
 async def _add_hll_player_web(steam_id: str, db: AsyncSession):
@@ -500,7 +607,7 @@ async def _add_hll_player_web(steam_id: str, db: AsyncSession):
     await db.commit()
     await db.refresh(player)
     await snapshot_player(steam_id)
-    return RedirectResponse("/hll", status_code=303)
+    return RedirectResponse("/hll?added=1", status_code=303)
 
 
 @router.post("/players/{battletag:path}/delete")
