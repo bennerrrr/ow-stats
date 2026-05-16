@@ -28,6 +28,7 @@ async def init_db():
             "ALTER TABLE stat_snapshots ADD COLUMN game_data JSON",
             "ALTER TABLE players ADD COLUMN game VARCHAR NOT NULL DEFAULT 'overwatch'",
             "ALTER TABLE discord_channels ADD COLUMN game VARCHAR",
+            "ALTER TABLE discord_channels ADD COLUMN muted INTEGER NOT NULL DEFAULT 0",
         ]:
             try:
                 await conn.execute(text(stmt))

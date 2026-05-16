@@ -644,6 +644,8 @@ async def _broadcast(embed: discord.Embed, game: str | None = None) -> None:
         channels = result.scalars().all()
 
     for ch in channels:
+        if ch.muted:
+            continue
         discord_channel = bot.get_channel(int(ch.channel_id))
         if discord_channel:
             try:
@@ -740,6 +742,27 @@ async def send_preview_to_channel(channel_id: str) -> bool:
     embed.set_footer(text="Sent from /utils")
     await ch.send(embed=embed)
     return True
+
+
+async def send_preview_dm() -> str | None:
+    """Send a test DM. Returns error string on failure, None on success."""
+    if not bot.is_ready():
+        return "Bot not ready"
+    user_id = await _get_setting("discord_dm_user_id") or os.getenv("DISCORD_DM_USER_ID")
+    if not user_id:
+        return "No DM user ID configured"
+    try:
+        user = await bot.fetch_user(int(user_id))
+        embed = discord.Embed(
+            title="ow-stats — test DM",
+            description="Direct message notifications are working correctly.",
+            color=0x44FF88,
+        )
+        embed.set_footer(text="Sent from /utils")
+        await user.send(embed=embed)
+        return None
+    except Exception as e:
+        return str(e)
 
 
 # ---------------------------------------------------------------------------

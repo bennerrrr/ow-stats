@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 from typing import Optional
-from sqlalchemy import Integer, String, Float, DateTime, ForeignKey, JSON, Text
+from sqlalchemy import Boolean, Integer, String, Float, DateTime, ForeignKey, JSON, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from database import Base
 
@@ -21,6 +21,7 @@ class DiscordChannel(Base):
     channel_name: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     # NULL = receives all games; "overwatch" / "hell_let_loose" = game-specific
     game: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    muted: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="0")
     added_at: Mapped[datetime] = mapped_column(
         DateTime, default=lambda: datetime.now(timezone.utc)
     )
