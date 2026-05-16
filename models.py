@@ -5,6 +5,13 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from database import Base
 
 
+class Setting(Base):
+    __tablename__ = "settings"
+
+    key: Mapped[str] = mapped_column(String, primary_key=True)
+    value: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+
+
 class DiscordChannel(Base):
     __tablename__ = "discord_channels"
 

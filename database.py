@@ -21,7 +21,7 @@ async def get_db():
 async def init_db():
     os.makedirs("data", exist_ok=True)
     async with engine.begin() as conn:
-        from models import Player, StatSnapshot, DiscordChannel  # noqa: F401
+        from models import Player, StatSnapshot, DiscordChannel, Setting  # noqa: F401
         await conn.run_sync(Base.metadata.create_all)
         for stmt in [
             "ALTER TABLE stat_snapshots ADD COLUMN stats_by_gamemode JSON",
