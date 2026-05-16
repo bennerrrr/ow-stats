@@ -1065,42 +1065,50 @@ async def cmd_leaderboard(
         await interaction.followup.send("No snapshot data found.", ephemeral=True)
         return
 
+    _OW_STATS = {"kda", "win_rate", "games"}
+    _HLL_STATS = {"kills", "playtime"}
+
+    def _effective_stat(game_type: str) -> str:
+        if stat_key is None:
+            return "kills" if game_type == "hell_let_loose" else "kda"
+        if game_type == "hell_let_loose" and stat_key in _OW_STATS:
+            return "kills"
+        if game_type == "overwatch" and stat_key in _HLL_STATS:
+            return "kda"
+        return stat_key
+
     def _stat_value(p: Player, s: StatSnapshot) -> float:
-        effective_stat = stat_key
-        if effective_stat is None:
-            effective_stat = "kills" if p.game == "hell_let_loose" else "kda"
-        if effective_stat == "kda":
+        sk = _effective_stat(p.game)
+        if sk == "kda":
             return s.kda or 0.0
-        if effective_stat == "win_rate":
+        if sk == "win_rate":
             return s.win_rate or 0.0
-        if effective_stat == "games":
+        if sk == "games":
             return float(s.games_played or 0)
         gd = s.game_data or {}
-        if effective_stat == "kills":
+        if sk == "kills":
             return float(gd.get("kills") or 0)
-        if effective_stat == "playtime":
+        if sk == "playtime":
             return float(gd.get("playtime_forever") or 0)
         return 0.0
 
     def _stat_label(p: Player, s: StatSnapshot) -> str:
-        effective_stat = stat_key
-        if effective_stat is None:
-            effective_stat = "kills" if p.game == "hell_let_loose" else "kda"
-        if effective_stat == "kda":
+        sk = _effective_stat(p.game)
+        if sk == "kda":
             return f"{s.kda:.2f} KDA" if s.kda is not None else "—"
-        if effective_stat == "win_rate":
+        if sk == "win_rate":
             return f"{s.win_rate:.1%} WR" if s.win_rate is not None else "—"
-        if effective_stat == "games":
+        if sk == "games":
             if s.games_played is None:
                 return "—"
             w = s.games_won or 0
             l = s.games_lost or 0
             return f"{s.games_played:,} ({w}W / {l}L)"
         gd = s.game_data or {}
-        if effective_stat == "kills":
+        if sk == "kills":
             k = gd.get("kills")
             return f"{k:,} kills" if k is not None else "—"
-        if effective_stat == "playtime":
+        if sk == "playtime":
             pt = gd.get("playtime_forever")
             if pt is None:
                 return "—"
@@ -1108,23 +1116,30 @@ async def cmd_leaderboard(
             return f"{h}h {m}m"
         return "—"
 
-    entries.sort(key=lambda e: _stat_value(e[0], e[1]), reverse=True)
+    def _ranked_lines(group: list[tuple[Player, StatSnapshot]]) -> str:
+        group.sort(key=lambda e: _stat_value(e[0], e[1]), reverse=True)
+        lines = []
+        for rank, (p, s) in enumerate(group, 1):
+            name = p.display_name or p.battletag.split("#")[0]
+            lines.append(f"**#{rank}** {name} — {_stat_label(p, s)}")
+        text = "\n".join(lines)
+        return text[:1021] + "..." if len(text) > 1024 else text
 
-    stat_name = stat.name if stat else "KDA / Kills"
     game_name = game.name if game else "Overwatch 2"
+    stat_name = stat.name if stat else "KDA / Kills"
     embed_color = HLL_COLOR if game_filter == "hell_let_loose" else OW_COLOR
     embed = discord.Embed(title=f"Leaderboard — {game_name} · {stat_name}", color=embed_color)
 
-    lines = []
-    for rank, (p, s) in enumerate(entries, 1):
-        name = p.display_name or p.battletag.split("#")[0]
-        game_tag = "[HLL] " if p.game == "hell_let_loose" else ""
-        lines.append(f"**#{rank}** {game_tag}{name} — {_stat_label(p, s)}")
+    if game_filter == "all":
+        ow_entries = [(p, s) for p, s in entries if p.game == "overwatch"]
+        hll_entries = [(p, s) for p, s in entries if p.game == "hell_let_loose"]
+        if ow_entries:
+            embed.add_field(name="Overwatch 2", value=_ranked_lines(ow_entries), inline=False)
+        if hll_entries:
+            embed.add_field(name="Hell Let Loose", value=_ranked_lines(hll_entries), inline=False)
+    else:
+        embed.add_field(name="​", value=_ranked_lines(entries), inline=False)
 
-    text = "\n".join(lines)
-    if len(text) > 1024:
-        text = text[:1021] + "..."
-    embed.add_field(name="​", value=text, inline=False)
     await interaction.followup.send(embed=embed)
 
 
