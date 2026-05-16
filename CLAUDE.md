@@ -2,6 +2,17 @@
 
 **Git policy: always commit and push to the `dev` branch, never to `main`.**
 
+**Commit workflow — follow these steps in order every time the user asks to commit:**
+1. Ask whether the change warrants a new version tag (yes / no).
+2. If yes, ask which semver bump applies (`patch` / `minor` / `major`), determine the next tag from the latest `git tag`, then:
+   a. Commit and push to `dev`.
+   b. Open a PR from `dev` → `main` via `gh pr create` titled `Release vX.Y.Z` with a brief summary of changes.
+   c. Tell the user: after merging the PR, run these commands to tag the release:
+      ```bash
+      git checkout main && git pull && git tag vX.Y.Z && git push origin vX.Y.Z && git checkout dev
+      ```
+3. If no tag, just commit and push to `dev` — no PR needed.
+
 Self-hosted stats tracker for **Overwatch 2** and **Hell Let Loose**. Polls player APIs on a configurable interval, stores historical snapshots in SQLite, serves a web dashboard, and pushes session/rank alerts to Discord.
 
 ## Stack

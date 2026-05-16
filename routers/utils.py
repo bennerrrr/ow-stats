@@ -14,9 +14,9 @@ from sqlalchemy import text
 from database import DATABASE_URL, AsyncSessionLocal, engine
 from discord_bot import bot
 from scheduler import poll_all_players, scheduler
+from _templates import templates
 
 router = APIRouter(prefix="/utils", tags=["utils"])
-templates = Jinja2Templates(directory="templates")
 
 _UTILS_TOKEN = os.getenv("UTILS_TOKEN", "")
 _DB_PATH = Path(DATABASE_URL.split("///")[-1])
