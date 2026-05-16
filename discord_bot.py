@@ -148,9 +148,9 @@ def _hll_trend(snaps) -> dict | None:
     return {"kills_delta": kills_delta, "pt_delta": pt_delta, "period": period}
 
 
-def _last_ow_session(snaps) -> dict | None:
-    """Find the most recent consecutive snapshot pair where games_played increased."""
+def _all_ow_sessions(snaps, limit: int = 10) -> list[dict]:
     ordered = list(reversed(snaps))  # oldest → newest
+    sessions = []
     for i in range(len(ordered) - 1, 0, -1):
         prev, curr = ordered[i - 1], ordered[i]
         if curr.games_played is None or prev.games_played is None:
@@ -159,19 +159,20 @@ def _last_ow_session(snaps) -> dict | None:
         if delta <= 0:
             continue
         wins = max(0, (curr.games_won or 0) - (prev.games_won or 0))
-        losses = delta - wins
         kda_d = round(curr.kda - prev.kda, 2) if curr.kda is not None and prev.kda is not None else None
         end_time = curr.fetched_at if curr.fetched_at.tzinfo else curr.fetched_at.replace(tzinfo=timezone.utc)
-        return {
-            "games": delta, "wins": wins, "losses": losses,
+        sessions.append({
+            "games": delta, "wins": wins, "losses": delta - wins,
             "win_rate": wins / delta * 100, "kda_delta": kda_d, "end_time": end_time,
-        }
-    return None
+        })
+        if len(sessions) >= limit:
+            break
+    return sessions
 
 
-def _last_hll_session(snaps) -> dict | None:
-    """Find the most recent HLL session via playtime_forever delta."""
+def _all_hll_sessions(snaps, limit: int = 10) -> list[dict]:
     ordered = list(reversed(snaps))
+    sessions = []
     for i in range(len(ordered) - 1, 0, -1):
         prev, curr = ordered[i - 1], ordered[i]
         pgd, cgd = prev.game_data or {}, curr.game_data or {}
@@ -184,8 +185,20 @@ def _last_hll_session(snaps) -> dict | None:
         kills_d = (cgd["kills"] - pgd["kills"]) if cgd.get("kills") is not None and pgd.get("kills") is not None else None
         xp_d = (cgd["total_xp"] - pgd["total_xp"]) if cgd.get("total_xp") is not None and pgd.get("total_xp") is not None else None
         end_time = curr.fetched_at if curr.fetched_at.tzinfo else curr.fetched_at.replace(tzinfo=timezone.utc)
-        return {"duration_minutes": delta_minutes, "kills_delta": kills_d, "xp_delta": xp_d, "end_time": end_time}
-    return None
+        sessions.append({"duration_minutes": delta_minutes, "kills_delta": kills_d, "xp_delta": xp_d, "end_time": end_time})
+        if len(sessions) >= limit:
+            break
+    return sessions
+
+
+def _last_ow_session(snaps) -> dict | None:
+    s = _all_ow_sessions(snaps, limit=1)
+    return s[0] if s else None
+
+
+def _last_hll_session(snaps) -> dict | None:
+    s = _all_hll_sessions(snaps, limit=1)
+    return s[0] if s else None
 
 
 # ---------------------------------------------------------------------------
@@ -218,6 +231,21 @@ def build_ow_stats_embed(player: Player, snapshot: StatSnapshot, snaps=None) -> 
         stat_lines.append(f"**Games:** {snapshot.games_played} ({w}W / {l}L)")
     if stat_lines:
         embed.add_field(name="Overall Stats", value="\n".join(stat_lines), inline=True)
+
+    sgm = snapshot.stats_by_gamemode or {}
+    comp = sgm.get("competitive") or {}
+    qp = sgm.get("quickplay") or {}
+    mode_lines = []
+    if comp.get("games_played"):
+        wr = f" · {comp['win_rate']:.0%}" if comp.get("win_rate") is not None else ""
+        kda = f" · {comp['kda']:.2f} KDA" if comp.get("kda") is not None else ""
+        mode_lines.append(f"**Comp:** {comp['games_played']}g{wr}{kda}")
+    if qp.get("games_played"):
+        wr = f" · {qp['win_rate']:.0%}" if qp.get("win_rate") is not None else ""
+        kda = f" · {qp['kda']:.2f} KDA" if qp.get("kda") is not None else ""
+        mode_lines.append(f"**QP:** {qp['games_played']}g{wr}{kda}")
+    if mode_lines:
+        embed.add_field(name="Gamemode", value="\n".join(mode_lines), inline=True)
 
     if snaps and len(snaps) >= 2:
         trend = _ow_trend(snaps)
@@ -255,7 +283,9 @@ def build_ow_stats_embed(player: Player, snapshot: StatSnapshot, snaps=None) -> 
             time_str = _fmt_time(h.get("time_played", 0))
             wr = h.get("win_rate")
             wr_str = f" · {wr:.0%} WR" if wr is not None else ""
-            hero_lines.append(f"**{h.get('name', h.get('hero', '?'))}:** {time_str}{wr_str}")
+            kda = h.get("kda")
+            kda_str = f" · {kda:.2f} KDA" if kda is not None else ""
+            hero_lines.append(f"**{h.get('name', h.get('hero', '?'))}:** {time_str}{wr_str}{kda_str}")
         embed.add_field(name="Top Heroes", value="\n".join(hero_lines), inline=False)
 
     fa = snapshot.fetched_at
@@ -512,6 +542,58 @@ def build_hll_session_embed(
 
 
 # ---------------------------------------------------------------------------
+# Embed builder — compare
+# ---------------------------------------------------------------------------
+
+def build_compare_embed(p1: Player, s1: StatSnapshot, p2: Player, s2: StatSnapshot) -> discord.Embed:
+    color = OW_COLOR if p1.game == "overwatch" else HLL_COLOR
+    n1 = p1.display_name or p1.battletag.split("#")[0]
+    n2 = p2.display_name or p2.battletag.split("#")[0]
+    embed = discord.Embed(title=f"{n1} vs {n2}", color=color)
+
+    if p1.game == "overwatch":
+        embed.set_author(name="Overwatch 2 — Player Comparison")
+
+        def _ow_vals(s: StatSnapshot) -> str:
+            lines = [
+                f"{s.win_rate:.1%}" if s.win_rate is not None else "—",
+                f"{s.kda:.2f}" if s.kda is not None else "—",
+                str(s.games_played) if s.games_played is not None else "—",
+                _rank_display(s.rank_tank),
+                _rank_display(s.rank_damage),
+                _rank_display(s.rank_support),
+                _rank_display(s.rank_open),
+            ]
+            return "\n".join(lines)
+
+        embed.add_field(name="Stat", value="Win Rate\nKDA\nGames\nTank\nDamage\nSupport\nOpen", inline=True)
+        embed.add_field(name=n1, value=_ow_vals(s1), inline=True)
+        embed.add_field(name=n2, value=_ow_vals(s2), inline=True)
+    else:
+        embed.set_author(name="Hell Let Loose — Player Comparison")
+
+        def _hll_vals(s: StatSnapshot) -> str:
+            gd = s.game_data or {}
+            k = gd.get("kills")
+            hs = gd.get("headshots") or 0
+            kills_str = f"{k:,} ({hs/k:.0%} HS)" if k else "—"
+            pt = gd.get("playtime_forever")
+            if pt is not None:
+                h, m = divmod(pt, 60)
+                pt_str = f"{h}h {m}m"
+            else:
+                pt_str = "—"
+            lines = [kills_str, pt_str, gd.get("top_role") or "—"]
+            return "\n".join(lines)
+
+        embed.add_field(name="Stat", value="Kills\nPlaytime\nTop Role", inline=True)
+        embed.add_field(name=n1, value=_hll_vals(s1), inline=True)
+        embed.add_field(name=n2, value=_hll_vals(s2), inline=True)
+
+    return embed
+
+
+# ---------------------------------------------------------------------------
 # Notification dispatch (called by scheduler)
 # ---------------------------------------------------------------------------
 
@@ -666,6 +748,20 @@ async def _ow_players_autocomplete(
 _GAME_CHOICES = [
     app_commands.Choice(name="Overwatch 2", value="overwatch"),
     app_commands.Choice(name="Hell Let Loose", value="hell_let_loose"),
+]
+
+_GAME_CHOICES_WITH_ALL = [
+    app_commands.Choice(name="All games",          value="all"),
+    app_commands.Choice(name="Overwatch 2",        value="overwatch"),
+    app_commands.Choice(name="Hell Let Loose",     value="hell_let_loose"),
+]
+
+_LEADERBOARD_STAT_CHOICES = [
+    app_commands.Choice(name="KDA",            value="kda"),
+    app_commands.Choice(name="Win Rate",       value="win_rate"),
+    app_commands.Choice(name="Games",          value="games"),
+    app_commands.Choice(name="Kills (HLL)",    value="kills"),
+    app_commands.Choice(name="Playtime (HLL)", value="playtime"),
 ]
 
 
@@ -923,6 +1019,258 @@ async def cmd_players(interaction: discord.Interaction):
         embed.add_field(name="Hell Let Loose", value="\n".join(_player_line(p) for p in hll_players), inline=False)
 
     await interaction.response.send_message(embed=embed)
+
+
+@bot.tree.command(name="leaderboard", description="Rank tracked players by a stat")
+@app_commands.describe(
+    game="Filter by game (default: Overwatch 2)",
+    stat="Stat to rank by",
+)
+@app_commands.choices(game=_GAME_CHOICES_WITH_ALL, stat=_LEADERBOARD_STAT_CHOICES)
+async def cmd_leaderboard(
+    interaction: discord.Interaction,
+    game: app_commands.Choice[str] = None,
+    stat: app_commands.Choice[str] = None,
+):
+    await interaction.response.defer()
+    game_filter = game.value if game else "overwatch"
+    stat_key = stat.value if stat else None
+
+    async with AsyncSessionLocal() as session:
+        if game_filter == "all":
+            result = await session.execute(select(Player).order_by(Player.game, Player.battletag))
+        else:
+            result = await session.execute(
+                select(Player).where(Player.game == game_filter).order_by(Player.battletag)
+            )
+        players = result.scalars().all()
+
+        if not players:
+            await interaction.followup.send("No players tracked yet.", ephemeral=True)
+            return
+
+        entries: list[tuple[Player, StatSnapshot]] = []
+        for p in players:
+            snap_result = await session.execute(
+                select(StatSnapshot)
+                .where(StatSnapshot.player_id == p.id)
+                .order_by(StatSnapshot.fetched_at.desc())
+                .limit(1)
+            )
+            snap = snap_result.scalar_one_or_none()
+            if snap:
+                entries.append((p, snap))
+
+    if not entries:
+        await interaction.followup.send("No snapshot data found.", ephemeral=True)
+        return
+
+    _OW_STATS = {"kda", "win_rate", "games"}
+    _HLL_STATS = {"kills", "playtime"}
+
+    def _effective_stat(game_type: str) -> str:
+        if stat_key is None:
+            return "kills" if game_type == "hell_let_loose" else "kda"
+        if game_type == "hell_let_loose" and stat_key in _OW_STATS:
+            return "kills"
+        if game_type == "overwatch" and stat_key in _HLL_STATS:
+            return "kda"
+        return stat_key
+
+    def _stat_value(p: Player, s: StatSnapshot) -> float:
+        sk = _effective_stat(p.game)
+        if sk == "kda":
+            return s.kda or 0.0
+        if sk == "win_rate":
+            return s.win_rate or 0.0
+        if sk == "games":
+            return float(s.games_played or 0)
+        gd = s.game_data or {}
+        if sk == "kills":
+            return float(gd.get("kills") or 0)
+        if sk == "playtime":
+            return float(gd.get("playtime_forever") or 0)
+        return 0.0
+
+    def _stat_label(p: Player, s: StatSnapshot) -> str:
+        sk = _effective_stat(p.game)
+        if sk == "kda":
+            return f"{s.kda:.2f} KDA" if s.kda is not None else "—"
+        if sk == "win_rate":
+            return f"{s.win_rate:.1%} WR" if s.win_rate is not None else "—"
+        if sk == "games":
+            if s.games_played is None:
+                return "—"
+            w = s.games_won or 0
+            l = s.games_lost or 0
+            return f"{s.games_played:,} ({w}W / {l}L)"
+        gd = s.game_data or {}
+        if sk == "kills":
+            k = gd.get("kills")
+            return f"{k:,} kills" if k is not None else "—"
+        if sk == "playtime":
+            pt = gd.get("playtime_forever")
+            if pt is None:
+                return "—"
+            h, m = divmod(pt, 60)
+            return f"{h}h {m}m"
+        return "—"
+
+    def _ranked_lines(group: list[tuple[Player, StatSnapshot]]) -> str:
+        group.sort(key=lambda e: _stat_value(e[0], e[1]), reverse=True)
+        lines = []
+        for rank, (p, s) in enumerate(group, 1):
+            name = p.display_name or p.battletag.split("#")[0]
+            lines.append(f"**#{rank}** {name} — {_stat_label(p, s)}")
+        text = "\n".join(lines)
+        return text[:1021] + "..." if len(text) > 1024 else text
+
+    game_name = game.name if game else "Overwatch 2"
+    stat_name = stat.name if stat else "KDA / Kills"
+    embed_color = HLL_COLOR if game_filter == "hell_let_loose" else OW_COLOR
+    embed = discord.Embed(title=f"Leaderboard — {game_name} · {stat_name}", color=embed_color)
+
+    if game_filter == "all":
+        ow_entries = [(p, s) for p, s in entries if p.game == "overwatch"]
+        hll_entries = [(p, s) for p, s in entries if p.game == "hell_let_loose"]
+        if ow_entries:
+            embed.add_field(name="Overwatch 2", value=_ranked_lines(ow_entries), inline=False)
+        if hll_entries:
+            embed.add_field(name="Hell Let Loose", value=_ranked_lines(hll_entries), inline=False)
+    else:
+        embed.add_field(name="​", value=_ranked_lines(entries), inline=False)
+
+    await interaction.followup.send(embed=embed)
+
+
+@bot.tree.command(name="sessions", description="Show recent sessions for a tracked player")
+@app_commands.describe(
+    player_id="Player identifier",
+    count="Number of sessions to show (1–10, default 5)",
+)
+@app_commands.autocomplete(player_id=_tracked_players_autocomplete)
+async def cmd_sessions(interaction: discord.Interaction, player_id: str, count: int = 5):
+    await interaction.response.defer()
+    count = max(1, min(count, 10))
+    player_id = player_id.strip()
+
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(select(Player).where(Player.battletag == player_id))
+        player = result.scalar_one_or_none()
+        if not player:
+            await interaction.followup.send(f"**{player_id}** is not tracked.", ephemeral=True)
+            return
+
+        cutoff = datetime.now(timezone.utc) - timedelta(days=60)
+        snap_result = await session.execute(
+            select(StatSnapshot)
+            .where(StatSnapshot.player_id == player.id)
+            .where(StatSnapshot.fetched_at >= cutoff)
+            .order_by(StatSnapshot.fetched_at.desc())
+        )
+        snaps = snap_result.scalars().all()
+
+    name = player.display_name or player.battletag
+
+    if player.game == "overwatch":
+        sessions = _all_ow_sessions(snaps, limit=count)
+        if not sessions:
+            await interaction.followup.send(
+                f"No sessions found for **{name}** in the last 60 days.", ephemeral=True
+            )
+            return
+        lines = []
+        for i, s in enumerate(sessions, 1):
+            game_word = "game" if s["games"] == 1 else "games"
+            kda_str = ""
+            if s["kda_delta"] is not None:
+                sign = "+" if s["kda_delta"] >= 0 else ""
+                kda_str = f" · KDA {sign}{s['kda_delta']}"
+            lines.append(
+                f"**{i}.** {s['wins']}W / {s['losses']}L ({s['games']} {game_word})"
+                f" · {s['win_rate']:.1f}% WR{kda_str} · {_discord_timeago(s['end_time'])}"
+            )
+        embed = discord.Embed(title=f"Sessions — {name}", color=OW_COLOR)
+        embed.set_author(name=f"Overwatch 2 · {player.battletag}")
+    else:
+        sessions = _all_hll_sessions(snaps, limit=count)
+        if not sessions:
+            await interaction.followup.send(
+                f"No sessions found for **{name}** in the last 60 days.", ephemeral=True
+            )
+            return
+        lines = []
+        for i, s in enumerate(sessions, 1):
+            h, m = divmod(s["duration_minutes"], 60)
+            dur_str = f"{h}h {m}m" if h else f"{m}m"
+            parts = [f"**{i}.** {dur_str}"]
+            if s["kills_delta"] is not None:
+                parts.append(f"+{s['kills_delta']:,} kills")
+            if s["xp_delta"] is not None and s["xp_delta"] > 0:
+                parts.append(f"+{s['xp_delta']:,} XP")
+            parts.append(_discord_timeago(s["end_time"]))
+            lines.append(" · ".join(parts))
+        embed = discord.Embed(title=f"Sessions — {name}", color=HLL_COLOR)
+        embed.set_author(name=f"Hell Let Loose · {player.battletag}")
+
+    text = "\n".join(lines)
+    embed.add_field(name=f"Last {len(sessions)} session(s)", value=text, inline=False)
+    await interaction.followup.send(embed=embed)
+
+
+@bot.tree.command(name="compare", description="Compare two tracked players side-by-side")
+@app_commands.describe(player1="First player", player2="Second player")
+@app_commands.autocomplete(player1=_tracked_players_autocomplete, player2=_tracked_players_autocomplete)
+async def cmd_compare(interaction: discord.Interaction, player1: str, player2: str):
+    await interaction.response.defer()
+    player1, player2 = player1.strip(), player2.strip()
+
+    if player1 == player2:
+        await interaction.followup.send("Please select two different players.", ephemeral=True)
+        return
+
+    async with AsyncSessionLocal() as session:
+        r1 = await session.execute(select(Player).where(Player.battletag == player1))
+        p1 = r1.scalar_one_or_none()
+        r2 = await session.execute(select(Player).where(Player.battletag == player2))
+        p2 = r2.scalar_one_or_none()
+
+        if not p1:
+            await interaction.followup.send(f"**{player1}** is not tracked.", ephemeral=True)
+            return
+        if not p2:
+            await interaction.followup.send(f"**{player2}** is not tracked.", ephemeral=True)
+            return
+        if p1.game != p2.game:
+            await interaction.followup.send(
+                "Both players must be from the same game.", ephemeral=True
+            )
+            return
+
+        snap_r1 = await session.execute(
+            select(StatSnapshot)
+            .where(StatSnapshot.player_id == p1.id)
+            .order_by(StatSnapshot.fetched_at.desc())
+            .limit(1)
+        )
+        s1 = snap_r1.scalar_one_or_none()
+
+        snap_r2 = await session.execute(
+            select(StatSnapshot)
+            .where(StatSnapshot.player_id == p2.id)
+            .order_by(StatSnapshot.fetched_at.desc())
+            .limit(1)
+        )
+        s2 = snap_r2.scalar_one_or_none()
+
+        if not s1 or not s2:
+            await interaction.followup.send(
+                "Could not find snapshot data for one or both players.", ephemeral=True
+            )
+            return
+
+    embed = build_compare_embed(p1, s1, p2, s2)
+    await interaction.followup.send(embed=embed)
 
 
 _CHANNEL_GAME_CHOICES = [
