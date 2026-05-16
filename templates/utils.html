@@ -176,7 +176,56 @@
         </div>
       </div>
       <div id="invite-result" class="text-[10px] text-gray-700 mb-3"></div>
+
+      <!-- Mute toggle -->
+      <div class="flex items-center gap-4 py-3 mb-1" style="border-top:1px solid #1a1a1a">
+        <div class="flex-1">
+          <div class="text-[10px] text-gray-500 uppercase tracking-widest mb-0.5">MUTE ALL NOTIFICATIONS</div>
+          <div class="text-[10px] text-gray-700">Suspend all Discord channel &amp; DM notifications</div>
+        </div>
+        <button id="mute-btn" onclick="toggleMute()" disabled
+          style="border:1px solid #333;min-width:80px;"
+          class="px-4 py-1.5 text-xs font-bold uppercase tracking-wider text-gray-500 hover:text-gray-200 hover:border-[#555] transition-colors">
+          …
+        </button>
+      </div>
+
+      <!-- DM User ID -->
+      <div class="py-3 mb-3" style="border-top:1px solid #1a1a1a;border-bottom:1px solid #1a1a1a">
+        <div class="text-[10px] text-gray-500 uppercase tracking-widest mb-2">DM USER ID</div>
+        <div class="flex items-center gap-2">
+          <input id="dm-user-input" type="text" placeholder="Discord user ID  (e.g. 123456789012345678)"
+            style="background:#0a0a0a;border:1px solid #333;color:#aaa;font-size:11px;padding:4px 8px;flex:1;font-family:inherit"
+            class="focus:outline-none focus:border-[#555]">
+          <button onclick="saveDmUser()"
+            style="border:1px solid #333;padding:3px 10px;font-size:10px;color:#666;cursor:pointer;background:transparent"
+            class="hover:text-gray-200 hover:border-[#555] transition-colors whitespace-nowrap">SAVE</button>
+          <button onclick="clearDmUser()"
+            style="border:1px solid #3b1f1f;padding:3px 10px;font-size:10px;color:#7f1d1d;cursor:pointer;background:transparent"
+            class="hover:text-red-400 hover:border-red-800 transition-colors">CLEAR</button>
+        </div>
+        <div id="dm-status" class="text-[10px] text-gray-700 mt-1.5"></div>
+      </div>
+
       <div id="discord-result" class="text-xs text-gray-700">// AWAITING INPUT</div>
+    </div>
+  </div>
+
+  <!-- Tracked Players — full width -->
+  <div class="md:col-span-2" style="background:#111111;border:1px solid #272727;border-left:3px solid #44ff88;">
+    <div class="p-5">
+      <div class="flex items-center justify-between mb-4">
+        <div>
+          <div class="text-[10px] tracking-[0.3em] uppercase mb-1" style="color:#44ff88;opacity:0.7">PLAYER MANAGEMENT</div>
+          <h2 class="text-sm font-bold text-white">TRACKED PLAYERS</h2>
+        </div>
+        <button onclick="loadPlayers()" id="players-load-btn"
+          style="border:1px solid #333;"
+          class="px-4 py-1.5 text-xs font-bold uppercase tracking-wider text-gray-500 hover:text-gray-200 hover:border-[#555] transition-colors">
+          LOAD PLAYERS
+        </button>
+      </div>
+      <div id="players-result" class="text-xs text-gray-700">// AWAITING INPUT</div>
     </div>
   </div>
 
@@ -215,6 +264,8 @@
       el.textContent = '● TOKEN LOADED';
       el.style.color = '#44ff88';
       checkHealth();
+      loadMuteState();
+      loadDmUser();
     }
   });
 
@@ -529,6 +580,136 @@
       btn.textContent = 'COPIED';
       setTimeout(() => { btn.textContent = 'COPY'; }, 2000);
     });
+  }
+
+  // ── Mute toggle ──────────────────────────────────────────────────────────
+
+  async function loadMuteState() {
+    const btn = document.getElementById('mute-btn');
+    try {
+      const res = await apiCall('/utils/discord/mute');
+      if (!res.ok) return;
+      const d = await res.json();
+      _applyMuteBtn(d.muted);
+    } catch {}
+    btn.disabled = false;
+  }
+
+  function _applyMuteBtn(muted) {
+    const btn = document.getElementById('mute-btn');
+    if (muted) {
+      btn.textContent = 'UNMUTE';
+      btn.style.borderColor = '#7f1d1d';
+      btn.style.color = '#ef4444';
+    } else {
+      btn.textContent = 'MUTE';
+      btn.style.borderColor = '#333';
+      btn.style.color = '';
+    }
+    btn.dataset.muted = muted ? '1' : '0';
+  }
+
+  async function toggleMute() {
+    const btn = document.getElementById('mute-btn');
+    const newMuted = btn.dataset.muted !== '1';
+    btn.disabled = true;
+    btn.textContent = '…';
+    try {
+      const res = await apiCall(`/utils/discord/mute?muted=${newMuted}`, 'POST');
+      if (res.ok) {
+        const d = await res.json();
+        _applyMuteBtn(d.muted);
+      }
+    } catch {}
+    btn.disabled = false;
+  }
+
+  // ── DM user ID ───────────────────────────────────────────────────────────
+
+  async function loadDmUser() {
+    try {
+      const res = await apiCall('/utils/discord/dm');
+      if (!res.ok) return;
+      const d = await res.json();
+      if (d.user_id) document.getElementById('dm-user-input').value = d.user_id;
+    } catch {}
+  }
+
+  async function saveDmUser() {
+    const el = document.getElementById('dm-status');
+    const uid = document.getElementById('dm-user-input').value.trim();
+    el.innerHTML = dim('// SAVING…');
+    try {
+      const res = await apiCall(`/utils/discord/dm?user_id=${encodeURIComponent(uid)}`, 'POST');
+      el.innerHTML = res.ok ? ok('● SAVED') : err('● FAILED');
+    } catch (e) { el.innerHTML = err('● ' + e.message); }
+    setTimeout(() => { el.innerHTML = ''; }, 3000);
+  }
+
+  async function clearDmUser() {
+    const el = document.getElementById('dm-status');
+    document.getElementById('dm-user-input').value = '';
+    el.innerHTML = dim('// CLEARING…');
+    try {
+      const res = await apiCall('/utils/discord/dm', 'DELETE');
+      el.innerHTML = res.ok ? ok('● CLEARED') : err('● FAILED');
+    } catch (e) { el.innerHTML = err('● ' + e.message); }
+    setTimeout(() => { el.innerHTML = ''; }, 3000);
+  }
+
+  // ── Tracked Players ──────────────────────────────────────────────────────
+
+  async function loadPlayers() {
+    const btn = document.getElementById('players-load-btn');
+    const el = document.getElementById('players-result');
+    btn.textContent = 'LOADING…';
+    btn.disabled = true;
+    el.innerHTML = dim('// FETCHING…');
+    try {
+      const res = await apiCall('/utils/players');
+      if (await handleApiError(res, 'players-result')) { btn.textContent = 'LOAD PLAYERS'; btn.disabled = false; return; }
+      const players = await res.json();
+      if (!players.length) {
+        el.innerHTML = dim('// NO PLAYERS TRACKED');
+      } else {
+        const ow = players.filter(p => p.game !== 'hell_let_loose');
+        const hll = players.filter(p => p.game === 'hell_let_loose');
+        const renderGroup = (label, color, list) => {
+          if (!list.length) return '';
+          const rows = list.map(p => {
+            const name = p.display_name || p.battletag;
+            const sub = p.display_name ? `<span style="color:#444;font-size:10px;margin-left:6px">${p.battletag}</span>` : '';
+            return `<div class="flex items-center gap-2 py-1 flex-wrap" style="font-family:monospace;font-size:11px">
+              <span style="color:${color};font-size:9px;border:1px solid ${color};padding:1px 5px;opacity:0.7">${label}</span>
+              <span style="color:#aaa">${name}</span>${sub}
+              <button onclick="removePlayer(${JSON.stringify(p.battletag)}, ${JSON.stringify(p.display_name || p.battletag)}, this)"
+                style="margin-left:auto;border:1px solid #3b1f1f;padding:2px 8px;font-size:10px;color:#7f1d1d;cursor:pointer;background:transparent"
+                class="hover:text-red-400 hover:border-red-800 transition-colors">REMOVE</button>
+            </div>`;
+          }).join('');
+          return rows;
+        };
+        el.innerHTML = renderGroup('OW2', '#F99E1A', ow) + renderGroup('HLL', '#8FBC4A', hll);
+      }
+    } catch (e) { el.innerHTML = err('● ' + e.message); }
+    btn.textContent = 'LOAD PLAYERS';
+    btn.disabled = false;
+  }
+
+  async function removePlayer(battletag, displayName, btn) {
+    if (!confirm(`Remove ${displayName} from tracking?`)) return;
+    btn.textContent = '…';
+    btn.disabled = true;
+    try {
+      const encoded = battletag.replace('#', '%23');
+      const res = await fetch(`/players/${encoded}/delete`, { method: 'POST' });
+      if (res.ok || res.redirected) { loadPlayers(); return; }
+      btn.textContent = 'ERR';
+      btn.disabled = false;
+    } catch {
+      btn.textContent = 'ERR';
+      btn.disabled = false;
+    }
   }
 </script>
 

@@ -185,18 +185,8 @@
     <p class="text-[10px] text-gray-700 uppercase tracking-wider">AWAITING FIRST POLL…</p>
     {% endif %}
 
-    <!-- Footer actions -->
-    <div class="flex gap-3 items-center" style="border-top:1px solid #1e1e1e;padding-top:8px;">
-      <div class="flex gap-3 ml-auto">
-        <a href="/players/{{ player.battletag | urltag }}" class="text-[10px] text-ow-blue hover:text-ow-cyan uppercase tracking-wider transition-colors">STATS</a>
-        <form method="post" action="/players/{{ player.battletag | urltag }}/refresh">
-          <button type="submit" class="text-[10px] text-gray-700 hover:text-gray-400 uppercase tracking-wider transition-colors">REFRESH</button>
-        </form>
-        <form method="post" action="/players/{{ player.battletag | urltag }}/delete"
-          onsubmit="return confirm('Remove {{ player.display_name or player.battletag }}?')">
-          <button type="submit" class="text-[10px] text-red-900 hover:text-red-500 uppercase tracking-wider transition-colors">REMOVE</button>
-        </form>
-      </div>
+    <div style="border-top:1px solid #1e1e1e;padding-top:8px;">
+      <a href="/players/{{ player.battletag | urltag }}" class="text-[10px] text-gray-700 hover:text-gray-400 uppercase tracking-wider transition-colors">VIEW STATS ──►</a>
     </div>
 
   </div>
