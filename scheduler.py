@@ -18,6 +18,12 @@ scheduler = AsyncIOScheduler()
 def _slog(value: str) -> str:
     return str(value).replace("\n", " ").replace("\r", " ")
 
+
+def _safe_avatar_url(url: str | None) -> str | None:
+    if url and url.startswith("https://") and len(url) <= 500:
+        return url
+    return None
+
 # battletag -> {baseline, latest, player_name, avatar_url}
 _pending_sessions: dict[str, dict] = {}
 
@@ -63,7 +69,7 @@ async def _snapshot_ow(battletag: str) -> None:
         }
 
         player.display_name = data.username
-        player.avatar_url = data.avatar
+        player.avatar_url = _safe_avatar_url(data.avatar)
 
         new_comparable = {
             "rank_tank": data.rank_tank,
@@ -138,12 +144,12 @@ async def _snapshot_ow(battletag: str) -> None:
                 "baseline": prev_dict,
                 "latest": new_dict,
                 "player_name": data.username,
-                "avatar_url": data.avatar,
+                "avatar_url": _safe_avatar_url(data.avatar),
             }
         else:
             _pending_sessions[battletag]["latest"] = new_dict
             _pending_sessions[battletag]["player_name"] = data.username
-            _pending_sessions[battletag]["avatar_url"] = data.avatar
+            _pending_sessions[battletag]["avatar_url"] = _safe_avatar_url(data.avatar)
     else:
         if battletag in _pending_sessions:
             sess = _pending_sessions.pop(battletag)
@@ -158,7 +164,7 @@ async def _snapshot_ow(battletag: str) -> None:
             asyncio.create_task(_send_stats_update(
                 player_name=data.username,
                 battletag=battletag,
-                avatar_url=data.avatar,
+                avatar_url=_safe_avatar_url(data.avatar),
                 prev=prev_dict,
                 new=new_dict,
             ))
@@ -203,7 +209,7 @@ async def _snapshot_hll(steam_id: str) -> None:
         prev_playtime = prev_gd_stored.get("playtime_forever")
 
         player.display_name = data.display_name
-        player.avatar_url = data.avatar
+        player.avatar_url = _safe_avatar_url(data.avatar)
 
         game_data = {
             "playtime_forever": data.playtime_forever,
@@ -265,7 +271,7 @@ async def _snapshot_hll(steam_id: str) -> None:
                     "total_xp":     data.total_xp,
                 },
                 "player_name": data.display_name,
-                "avatar_url":  data.avatar,
+                "avatar_url":  _safe_avatar_url(data.avatar),
                 "top_role":    data.top_role,
             }
         else:
@@ -277,7 +283,7 @@ async def _snapshot_hll(steam_id: str) -> None:
                 "total_xp":    data.total_xp,
             }
             _pending_sessions[steam_id]["player_name"] = data.display_name
-            _pending_sessions[steam_id]["avatar_url"]  = data.avatar
+            _pending_sessions[steam_id]["avatar_url"]  = _safe_avatar_url(data.avatar)
             _pending_sessions[steam_id]["top_role"]    = data.top_role
     else:
         if steam_id in _pending_sessions:

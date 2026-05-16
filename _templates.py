@@ -41,7 +41,7 @@ def _get_version_info() -> dict:
 
 _info = _get_version_info()
 
-templates = Jinja2Templates(directory="templates")
+templates = Jinja2Templates(directory="templates", autoescape=True)
 templates.env.globals["app_version"] = _info["version"]
 templates.env.globals["app_version_latest"] = _info["latest"]
 templates.env.globals["app_version_outdated"] = _info["outdated"]
