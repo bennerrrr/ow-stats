@@ -92,6 +92,23 @@ class HLLPlayerData:
     role_xp: dict = field(default_factory=dict)  # {display_name: xp_value}
 
 
+async def _get_with_retry(client: httpx.AsyncClient, url: str, **kwargs) -> httpx.Response:
+    """GET with up to 3 attempts and exponential backoff on transient errors."""
+    last_exc: Exception | None = None
+    for attempt in range(3):
+        try:
+            resp = await client.get(url, **kwargs)
+            if resp.status_code < 500:
+                return resp
+        except (httpx.TimeoutException, httpx.ConnectError) as exc:
+            last_exc = exc
+        if attempt < 2:
+            await asyncio.sleep(2 ** attempt)
+    if last_exc:
+        raise last_exc
+    return resp  # type: ignore[return-value]
+
+
 async def fetch_player(steam_id: str, api_key: str) -> HLLPlayerData:
     """
     Fetch HLL player data via Steam Web API.
@@ -105,18 +122,18 @@ async def fetch_player(steam_id: str, api_key: str) -> HLLPlayerData:
 
     async with httpx.AsyncClient(base_url=STEAM_API_BASE, timeout=15.0) as client:
         summary_resp, games_resp, stats_resp = await asyncio.gather(
-            client.get("/ISteamUser/GetPlayerSummaries/v0002/", params={
+            _get_with_retry(client, "/ISteamUser/GetPlayerSummaries/v0002/", params={
                 "key": api_key,
                 "steamids": steam_id,
             }),
-            client.get("/IPlayerService/GetOwnedGames/v0001/", params={
+            _get_with_retry(client, "/IPlayerService/GetOwnedGames/v0001/", params={
                 "key": api_key,
                 "steamid": steam_id,
                 "include_appinfo": "false",
                 "include_played_free_games": "true",
                 "appids_filter[0]": str(HLL_APP_ID),
             }),
-            client.get("/ISteamUserStats/GetUserStatsForGame/v0002/", params={
+            _get_with_retry(client, "/ISteamUserStats/GetUserStatsForGame/v0002/", params={
                 "key": api_key,
                 "steamid": steam_id,
                 "appid": str(HLL_APP_ID),

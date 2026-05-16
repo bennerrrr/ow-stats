@@ -159,6 +159,23 @@ def _parse_stats(data: dict) -> dict:
     }
 
 
+async def _get_with_retry(client: httpx.AsyncClient, url: str, **kwargs) -> httpx.Response:
+    """GET with up to 3 attempts and exponential backoff on transient errors."""
+    last_exc: Exception | None = None
+    for attempt in range(3):
+        try:
+            resp = await client.get(url, **kwargs)
+            if resp.status_code < 500:
+                return resp
+        except (httpx.TimeoutException, httpx.ConnectError) as exc:
+            last_exc = exc
+        if attempt < 2:
+            await asyncio.sleep(2 ** attempt)
+    if last_exc:
+        raise last_exc
+    return resp  # type: ignore[return-value]
+
+
 async def fetch_player(battletag: str) -> PlayerData:
     if not _BATTLETAG_RE.match(battletag):
         raise InvalidBattletagError(f"Invalid battletag: {battletag!r}")
@@ -173,10 +190,10 @@ async def fetch_player(battletag: str) -> PlayerData:
 
     async with httpx.AsyncClient(base_url=BASE_URL, timeout=15.0) as client:
         summary_resp, stats_resp, comp_resp, qp_resp = await asyncio.gather(
-            client.get(f"/players/{url_tag}/summary"),
-            client.get(f"/players/{url_tag}/stats/summary"),
-            client.get(f"/players/{url_tag}/stats/summary", params={"gamemode": "competitive"}),
-            client.get(f"/players/{url_tag}/stats/summary", params={"gamemode": "quickplay"}),
+            _get_with_retry(client, f"/players/{url_tag}/summary"),
+            _get_with_retry(client, f"/players/{url_tag}/stats/summary"),
+            _get_with_retry(client, f"/players/{url_tag}/stats/summary", params={"gamemode": "competitive"}),
+            _get_with_retry(client, f"/players/{url_tag}/stats/summary", params={"gamemode": "quickplay"}),
         )
 
     if summary_resp.status_code == 404:

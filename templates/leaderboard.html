@@ -40,6 +40,7 @@
           <th class="px-4 py-3 text-right text-gray-600 uppercase tracking-wider" id="ow-th-kda">KDA</th>
           <th class="px-4 py-3 text-right text-gray-600 uppercase tracking-wider" id="ow-th-games">Games</th>
           <th class="px-4 py-3 text-left text-gray-600 uppercase tracking-wider hidden sm:table-cell">Top Hero</th>
+          <th class="px-2 py-3 w-8"></th>
         </tr>
       </thead>
       <tbody id="ow-tbody" class="divide-y divide-[#1a1a1a]">
@@ -81,6 +82,11 @@
             {{ row.games if row.games is not none else '—' }}
           </td>
           <td class="px-4 py-3 text-gray-600 hidden sm:table-cell">{{ row.top_hero or '—' }}</td>
+          <td class="px-2 py-3">
+            <button onclick="pickCompare('{{ row.battletag }}')" title="Compare"
+              class="compare-btn text-[10px] text-gray-700 hover:text-ow-orange transition-colors px-1"
+              data-tag="{{ row.battletag }}">⚔</button>
+          </td>
         </tr>
         {% endfor %}
       </tbody>
@@ -119,6 +125,7 @@
           <th class="px-4 py-3 text-right text-gray-600 uppercase tracking-wider">K/HR</th>
           <th class="px-4 py-3 text-right text-gray-600 uppercase tracking-wider">Playtime</th>
           <th class="px-4 py-3 text-right text-gray-600 uppercase tracking-wider hidden sm:table-cell">HS%</th>
+          <th class="px-2 py-3 w-8"></th>
         </tr>
       </thead>
       <tbody id="hll-tbody" class="divide-y divide-[#1a1a1a]">
@@ -159,6 +166,11 @@
             {% else %}text-gray-700{% endif %}">
             {% if row.hs_pct is not none %}{{ row.hs_pct }}%{% else %}—{% endif %}
           </td>
+          <td class="px-2 py-3">
+            <button onclick="pickCompare('{{ row.battletag }}')" title="Compare"
+              class="compare-btn text-[10px] text-gray-700 hover:text-hll-bright transition-colors px-1"
+              data-tag="{{ row.battletag }}">⚔</button>
+          </td>
         </tr>
         {% endfor %}
       </tbody>
@@ -177,6 +189,7 @@
 <script>
 (function () {
   const ACCENTS = { ow: '#F99E1A', hll: '#8FBC4A' };
+  let _pending = null;
 
   window.sortTable = function (tbodyId, key) {
     const tbody = document.getElementById(tbodyId);
@@ -196,6 +209,29 @@
       btn.style.borderColor = active ? accent : '#333';
       btn.style.color = active ? accent : '#555';
     });
+  };
+
+  window.pickCompare = function (tag) {
+    if (!_pending) {
+      _pending = tag;
+      document.querySelectorAll('.compare-btn').forEach(function (btn) {
+        if (btn.dataset.tag === tag) {
+          btn.textContent = '✓';
+          btn.style.color = '#00D4FF';
+        } else {
+          btn.textContent = 'VS?';
+          btn.style.color = '#555';
+        }
+      });
+    } else if (_pending === tag) {
+      _pending = null;
+      document.querySelectorAll('.compare-btn').forEach(function (btn) {
+        btn.textContent = '⚔';
+        btn.style.color = '';
+      });
+    } else {
+      window.location.href = '/compare?p1=' + encodeURIComponent(_pending) + '&p2=' + encodeURIComponent(tag);
+    }
   };
 })();
 </script>

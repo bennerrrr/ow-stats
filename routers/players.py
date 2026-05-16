@@ -4,7 +4,7 @@ import re
 from datetime import datetime, timezone, timedelta
 from urllib.parse import quote
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
-from fastapi import APIRouter, Depends, Request, Form, HTTPException
+from fastapi import APIRouter, Depends, Request, Form, Query, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -341,6 +341,51 @@ def _compute_hll_trend(snaps) -> dict | None:
     if lgd.get("playtime_forever") is not None and bgd.get("playtime_forever") is not None:
         pt_delta = lgd["playtime_forever"] - bgd["playtime_forever"]
     return {"kills_delta": kills_delta, "pt_delta": pt_delta, "period": period}
+
+
+@router.get("/compare", response_class=HTMLResponse)
+async def compare_players(
+    request: Request,
+    p1: str = Query(default=""),
+    p2: str = Query(default=""),
+    db: AsyncSession = Depends(get_db),
+):
+    all_result = await db.execute(select(Player).order_by(Player.added_at))
+    all_players = all_result.scalars().all()
+
+    ctx: dict = {"request": request, "all_players": all_players, "player1": None, "player2": None, "error": None}
+
+    if not p1 or not p2:
+        return templates.TemplateResponse("compare.html", ctx)
+
+    r1 = await db.execute(select(Player).where(Player.battletag == p1))
+    r2 = await db.execute(select(Player).where(Player.battletag == p2))
+    player1 = r1.scalar_one_or_none()
+    player2 = r2.scalar_one_or_none()
+
+    if not player1 or not player2:
+        ctx["error"] = "One or both players not found."
+        return templates.TemplateResponse("compare.html", ctx)
+
+    if player1.game != player2.game:
+        ctx["error"] = "Players must be from the same game to compare."
+        ctx["player1"] = player1
+        ctx["player2"] = player2
+        return templates.TemplateResponse("compare.html", ctx)
+
+    s1_result = await db.execute(
+        select(StatSnapshot).where(StatSnapshot.player_id == player1.id)
+        .order_by(StatSnapshot.fetched_at.desc()).limit(1)
+    )
+    s2_result = await db.execute(
+        select(StatSnapshot).where(StatSnapshot.player_id == player2.id)
+        .order_by(StatSnapshot.fetched_at.desc()).limit(1)
+    )
+    snap1 = s1_result.scalar_one_or_none()
+    snap2 = s2_result.scalar_one_or_none()
+
+    ctx.update({"player1": player1, "player2": player2, "snap1": snap1, "snap2": snap2})
+    return templates.TemplateResponse("compare.html", ctx)
 
 
 @router.get("/leaderboard", response_class=HTMLResponse)

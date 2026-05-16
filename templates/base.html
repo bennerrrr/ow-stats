@@ -100,6 +100,11 @@
         class="px-3 py-1 text-xs font-bold uppercase tracking-wider border transition-colors hover:text-ow-cyan">
         ⊞ BOARD
       </a>
+      <a href="/compare"
+        style="{% if _path.startswith('/compare') %}border-color:#00D4FF;color:#00D4FF;background:rgba(0,212,255,0.06);{% else %}border-color:transparent;color:#666;{% endif %}"
+        class="px-3 py-1 text-xs font-bold uppercase tracking-wider border transition-colors hover:text-ow-cyan">
+        ⚔ VS
+      </a>
       <span class="w-px h-3.5 self-center mx-0.5" style="background:#222;"></span>
       <a href="/utils"
         style="{% if _path.startswith('/utils') %}border-color:#666;color:#aaa;background:rgba(170,170,170,0.05);{% else %}border-color:transparent;color:#444;{% endif %}"

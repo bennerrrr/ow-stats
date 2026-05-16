@@ -25,6 +25,7 @@ _TIER_ORDER = {
 }
 _OW_GAME_MILESTONES = {100, 250, 500, 1000, 2500, 5000}
 _HLL_KILL_MILESTONES = {1000, 5000, 10000, 25000, 50000, 100000}
+_HLL_PT_MILESTONES = {6000, 15000, 30000, 60000}  # 100h, 250h, 500h, 1000h in minutes
 
 
 def _rank_tier(rank: str | None) -> tuple[int, int]:
@@ -184,6 +185,18 @@ async def _snapshot_ow(battletag: str) -> None:
     else:
         if battletag in _pending_sessions:
             sess = _pending_sessions.pop(battletag)
+            # Win streak: perfect session of 3+ games
+            delta_games = (sess["latest"].get("games_played") or 0) - (sess["baseline"].get("games_played") or 0)
+            delta_wins = (sess["latest"].get("games_won") or 0) - (sess["baseline"].get("games_won") or 0)
+            if delta_games >= 3 and delta_wins == delta_games:
+                asyncio.create_task(_send_milestone(
+                    player_name=sess["player_name"],
+                    battletag=battletag,
+                    avatar_url=sess["avatar_url"],
+                    game="overwatch",
+                    milestone_type="win_streak",
+                    value=delta_games,
+                ))
             asyncio.create_task(_send_ow_report(
                 player_name=sess["player_name"],
                 battletag=battletag,
@@ -378,6 +391,18 @@ async def _snapshot_hll(steam_id: str) -> None:
             game="hell_let_loose",
             milestone_type="kills",
             value=kill_milestone,
+        ))
+
+    # Milestone: playtime (100h / 250h / 500h / 1000h)
+    pt_milestone = _crossed_milestone(prev_gd_stored.get("playtime_forever"), data.playtime_forever, _HLL_PT_MILESTONES)
+    if pt_milestone:
+        asyncio.create_task(_send_milestone(
+            player_name=data.display_name,
+            battletag=steam_id,
+            avatar_url=_safe_avatar_url(data.avatar),
+            game="hell_let_loose",
+            milestone_type="playtime",
+            value=pt_milestone // 60,
         ))
 
 

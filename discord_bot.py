@@ -689,6 +689,12 @@ def build_milestone_embed(
     elif milestone_type == "kills":
         title = f"💀 Milestone — {player_name}"
         desc = f"Reached **{value:,} career kills**"
+    elif milestone_type == "playtime":
+        title = f"⏱ Milestone — {player_name}"
+        desc = f"Reached **{value}h** of playtime"
+    elif milestone_type == "win_streak":
+        title = f"🔥 Perfect Session — {player_name}"
+        desc = f"**{value}-0** — flawless session!"
     else:
         title = f"⭐ Milestone — {player_name}"
         desc = str(value)

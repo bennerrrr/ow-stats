@@ -1,0 +1,239 @@
+{% extends "base.html" %}
+{% block title %}Compare — STATS.CMD{% endblock %}
+
+{% block content %}
+
+<div class="flex items-end gap-4 mb-5">
+  <div>
+    <div class="text-xs text-gray-600 tracking-[0.25em] uppercase mb-1">// ANALYSIS</div>
+    <h1 class="text-xl font-bold text-white tracking-wide">⚔ COMPARE</h1>
+  </div>
+</div>
+
+<!-- Player picker form -->
+<form method="get" action="/compare"
+  style="background:#111111;border:1px solid #272727;border-left:3px solid #00D4FF;"
+  class="flex flex-wrap gap-3 items-end mb-6 px-4 py-4">
+  <span class="text-xs text-gray-600 uppercase tracking-widest self-center">// SELECT OPERATORS</span>
+  <div class="flex gap-2 ml-auto flex-wrap items-end">
+    <div class="flex flex-col gap-1">
+      <label class="text-[10px] text-gray-700 uppercase tracking-wider">Operator 1</label>
+      <select name="p1" style="background:#0a0a0a;border:1px solid #333;"
+        class="px-3 py-1.5 text-xs text-white focus:outline-none focus:border-ow-cyan w-52">
+        <option value="">— select —</option>
+        {% for p in all_players %}
+        <option value="{{ p.battletag }}" {% if player1 and p.battletag == player1.battletag %}selected{% endif %}>
+          {{ p.display_name or p.battletag.split('#')[0] }} ({{ 'OW2' if p.game == 'overwatch' else 'HLL' }})
+        </option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="flex flex-col gap-1">
+      <label class="text-[10px] text-gray-700 uppercase tracking-wider">Operator 2</label>
+      <select name="p2" style="background:#0a0a0a;border:1px solid #333;"
+        class="px-3 py-1.5 text-xs text-white focus:outline-none focus:border-ow-cyan w-52">
+        <option value="">— select —</option>
+        {% for p in all_players %}
+        <option value="{{ p.battletag }}" {% if player2 and p.battletag == player2.battletag %}selected{% endif %}>
+          {{ p.display_name or p.battletag.split('#')[0] }} ({{ 'OW2' if p.game == 'overwatch' else 'HLL' }})
+        </option>
+        {% endfor %}
+      </select>
+    </div>
+    <button type="submit"
+      style="background:#00D4FF;color:#000;"
+      class="lock-target font-bold text-xs px-4 py-1.5 uppercase tracking-wider hover:opacity-90 transition-opacity">
+      COMPARE
+    </button>
+  </div>
+</form>
+
+{% if error %}
+<div style="border-left:3px solid #ff4444;background:rgba(255,68,68,0.05);" class="mb-5 px-4 py-3 text-xs text-red-400">
+  ⚠ {{ error }}
+</div>
+{% endif %}
+
+{% if player1 and player2 and not error %}
+{% set game = player1.game %}
+{% set n1 = player1.display_name or player1.battletag.split('#')[0] %}
+{% set n2 = player2.display_name or player2.battletag.split('#')[0] %}
+{% set accent = '#F99E1A' if game == 'overwatch' else '#8FBC4A' %}
+
+<!-- Player headers -->
+<div class="grid grid-cols-3 gap-3 mb-4">
+  <!-- Player 1 -->
+  <a href="/players/{{ player1.battletag | urltag }}"
+    style="background:#111111;border:1px solid #272727;border-left:3px solid {{ accent }};"
+    class="p-4 flex items-center gap-3 hover:bg-[#161616] transition-colors">
+    {% if player1.avatar_url %}
+    <img src="{{ player1.avatar_url }}" class="w-10 h-10 object-cover shrink-0" style="border:1px solid #333;" />
+    {% else %}
+    <div class="w-10 h-10 flex items-center justify-center font-bold text-sm shrink-0" style="background:#1a1a1a;border:1px solid #333;color:{{ accent }};">
+      {{ n1[0].upper() }}
+    </div>
+    {% endif %}
+    <div class="min-w-0">
+      <p class="font-bold text-white text-sm uppercase tracking-wide truncate">{{ n1 }}</p>
+      <p class="text-[10px] text-gray-600">{{ player1.battletag }}</p>
+    </div>
+  </a>
+
+  <!-- VS badge -->
+  <div class="flex items-center justify-center">
+    <span class="text-2xl font-bold text-gray-700 tracking-widest">VS</span>
+  </div>
+
+  <!-- Player 2 -->
+  <a href="/players/{{ player2.battletag | urltag }}"
+    style="background:#111111;border:1px solid #272727;border-right:3px solid {{ accent }};"
+    class="p-4 flex items-center gap-3 flex-row-reverse hover:bg-[#161616] transition-colors">
+    {% if player2.avatar_url %}
+    <img src="{{ player2.avatar_url }}" class="w-10 h-10 object-cover shrink-0" style="border:1px solid #333;" />
+    {% else %}
+    <div class="w-10 h-10 flex items-center justify-center font-bold text-sm shrink-0" style="background:#1a1a1a;border:1px solid #333;color:{{ accent }};">
+      {{ n2[0].upper() }}
+    </div>
+    {% endif %}
+    <div class="min-w-0 text-right">
+      <p class="font-bold text-white text-sm uppercase tracking-wide truncate">{{ n2 }}</p>
+      <p class="text-[10px] text-gray-600">{{ player2.battletag }}</p>
+    </div>
+  </a>
+</div>
+
+<!-- Stat comparison table -->
+{% if not snap1 and not snap2 %}
+<div style="background:#111111;border:1px solid #272727;" class="px-6 py-10 text-center">
+  <p class="text-gray-600 text-xs uppercase tracking-wider">NO SNAPSHOTS YET FOR EITHER PLAYER</p>
+</div>
+{% else %}
+
+{% if game == 'overwatch' %}
+{# ── OVERWATCH ──────────────────────────────────── #}
+{% macro ow_val(snap, key) %}
+  {% if snap is none %}—
+  {% elif key == 'win_rate' %}{{ "%.1f"|format((snap.win_rate * 100)) ~ "%" if snap.win_rate is not none else "—" }}
+  {% elif key == 'kda' %}{{ "%.2f"|format(snap.kda) if snap.kda is not none else "—" }}
+  {% elif key == 'games' %}{{ snap.games_played if snap.games_played is not none else "—" }}
+  {% elif key == 'rank_tank' %}{{ snap.rank_tank or "—" }}
+  {% elif key == 'rank_damage' %}{{ snap.rank_damage or "—" }}
+  {% elif key == 'rank_support' %}{{ snap.rank_support or "—" }}
+  {% elif key == 'rank_open' %}{{ snap.rank_open or "—" }}
+  {% elif key == 'top_hero' %}{{ snap.top_heroes[0].name if (snap.top_heroes and snap.top_heroes|length > 0) else "—" }}
+  {% else %}—{% endif %}
+{% endmacro %}
+
+{% macro ow_num(snap, key) %}
+  {% if snap is none %}-1
+  {% elif key == 'win_rate' %}{{ (snap.win_rate * 100) if snap.win_rate is not none else -1 }}
+  {% elif key == 'kda' %}{{ snap.kda if snap.kda is not none else -1 }}
+  {% elif key == 'games' %}{{ snap.games_played if snap.games_played is not none else -1 }}
+  {% else %}-1{% endif %}
+{% endmacro %}
+
+<div style="background:#111111;border:1px solid #272727;" class="overflow-x-auto">
+  <table class="w-full text-xs">
+    <thead style="background:#1a1a1a;">
+      <tr>
+        <th class="px-4 py-3 text-left text-gray-600 uppercase tracking-wider w-1/3">{{ n1 }}</th>
+        <th class="px-4 py-3 text-center text-gray-600 uppercase tracking-wider w-1/3">Stat</th>
+        <th class="px-4 py-3 text-right text-gray-600 uppercase tracking-wider w-1/3">{{ n2 }}</th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-[#1a1a1a]">
+      {% for key, label, higher_better in [
+        ('win_rate','WIN RATE',true),('kda','KDA',true),('games','GAMES',true),
+        ('rank_tank','TANK',false),('rank_damage','DAMAGE',false),('rank_support','SUPPORT',false),('rank_open','OPEN Q',false),
+        ('top_hero','TOP HERO',false)
+      ] %}
+      {% set v1 = ow_num(snap1, key) | float %}
+      {% set v2 = ow_num(snap2, key) | float %}
+      {% set p1wins = higher_better and v1 > v2 and v1 >= 0 and v2 >= 0 %}
+      {% set p2wins = higher_better and v2 > v1 and v1 >= 0 and v2 >= 0 %}
+      <tr class="hover:bg-[#141414] transition-colors">
+        <td class="px-4 py-3 font-mono font-bold
+          {% if p1wins %}text-[#44ff88]{% elif p2wins %}text-gray-600{% else %}text-gray-300{% endif %}">
+          {{ ow_val(snap1, key) }}
+          {% if p1wins %}<span class="text-[10px] ml-1">◀</span>{% endif %}
+        </td>
+        <td class="px-4 py-3 text-center text-gray-600 uppercase tracking-wider">{{ label }}</td>
+        <td class="px-4 py-3 text-right font-mono font-bold
+          {% if p2wins %}text-[#44ff88]{% elif p1wins %}text-gray-600{% else %}text-gray-300{% endif %}">
+          {% if p2wins %}<span class="text-[10px] mr-1">▶</span>{% endif %}
+          {{ ow_val(snap2, key) }}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% else %}
+{# ── HELL LET LOOSE ─────────────────────────────── #}
+{% set gd1 = (snap1.game_data or {}) if snap1 else {} %}
+{% set gd2 = (snap2.game_data or {}) if snap2 else {} %}
+
+{% macro hll_val(gd, key) %}
+  {% if key == 'kills' %}{{ "{:,}".format(gd.get('kills')) if gd.get('kills') is not none else "—" }}
+  {% elif key == 'kph' %}
+    {% set k = gd.get('kills') %}{% set pt = gd.get('playtime_forever') %}
+    {{ ((k / (pt / 60)) | round(1)) ~ "" if (k and pt and pt > 0) else "—" }}
+  {% elif key == 'pt' %}{{ (gd.get('playtime_forever') // 60) ~ "h" if gd.get('playtime_forever') is not none else "—" }}
+  {% elif key == 'hs_pct' %}
+    {% set k = gd.get('kills') %}{% set h = gd.get('headshots') %}
+    {{ ((h / k * 100) | round(1)) ~ "%" if (k and h is not none) else "—" }}
+  {% elif key == 'top_role' %}{{ gd.get('top_role') or "—" }}
+  {% else %}—{% endif %}
+{% endmacro %}
+
+{% macro hll_num(gd, key) %}
+  {% if key == 'kills' %}{{ gd.get('kills') if gd.get('kills') is not none else -1 }}
+  {% elif key == 'kph' %}
+    {% set k = gd.get('kills') %}{% set pt = gd.get('playtime_forever') %}
+    {{ ((k / (pt / 60)) | round(1)) if (k and pt and pt > 0) else -1 }}
+  {% elif key == 'pt' %}{{ gd.get('playtime_forever') if gd.get('playtime_forever') is not none else -1 }}
+  {% elif key == 'hs_pct' %}
+    {% set k = gd.get('kills') %}{% set h = gd.get('headshots') %}
+    {{ ((h / k * 100) | round(1)) if (k and h is not none) else -1 }}
+  {% else %}-1{% endif %}
+{% endmacro %}
+
+<div style="background:#111111;border:1px solid #272727;" class="overflow-x-auto">
+  <table class="w-full text-xs">
+    <thead style="background:#1a1a1a;">
+      <tr>
+        <th class="px-4 py-3 text-left text-gray-600 uppercase tracking-wider w-1/3">{{ n1 }}</th>
+        <th class="px-4 py-3 text-center text-gray-600 uppercase tracking-wider w-1/3">Stat</th>
+        <th class="px-4 py-3 text-right text-gray-600 uppercase tracking-wider w-1/3">{{ n2 }}</th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-[#1a1a1a]">
+      {% for key, label in [('kills','KILLS'),('kph','K/HR'),('pt','PLAYTIME'),('hs_pct','HS%'),('top_role','TOP ROLE')] %}
+      {% set v1 = hll_num(gd1, key) | float %}
+      {% set v2 = hll_num(gd2, key) | float %}
+      {% set higher_better = key != 'top_role' %}
+      {% set p1wins = higher_better and v1 > v2 and v1 >= 0 and v2 >= 0 %}
+      {% set p2wins = higher_better and v2 > v1 and v1 >= 0 and v2 >= 0 %}
+      <tr class="hover:bg-[#141414] transition-colors">
+        <td class="px-4 py-3 font-mono font-bold
+          {% if p1wins %}text-hll-bright{% elif p2wins %}text-gray-600{% else %}text-gray-300{% endif %}">
+          {{ hll_val(gd1, key) }}
+          {% if p1wins %}<span class="text-[10px] ml-1">◀</span>{% endif %}
+        </td>
+        <td class="px-4 py-3 text-center text-gray-600 uppercase tracking-wider">{{ label }}</td>
+        <td class="px-4 py-3 text-right font-mono font-bold
+          {% if p2wins %}text-hll-bright{% elif p1wins %}text-gray-600{% else %}text-gray-300{% endif %}">
+          {% if p2wins %}<span class="text-[10px] mr-1">▶</span>{% endif %}
+          {{ hll_val(gd2, key) }}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+{% endif %}
+{% endif %}
+
+{% endblock %}
