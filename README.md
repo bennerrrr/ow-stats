@@ -11,7 +11,10 @@ A self-hosted stats tracker for **Overwatch 2** and **Hell Let Loose**. Periodic
 - Per-player detail pages with Chart.js charts, rank history, and play session breakdowns
 - Session detection — Discord alerts fire once a play session ends, not mid-session
 - Discord bot with slash commands for adding/removing players, looking up stats, and managing notification channels
-- Admin utility panel at `/utils` for DB export, import, vacuum, health checks, and on-demand polling
+- **Discord DM notifications** — configure a Discord user ID in `/utils` (or `DISCORD_DM_USER_ID` env var) to receive personal DMs alongside channel notifications
+- **Notification mute toggle** — instantly suspend all Discord channel and DM notifications from the `/utils` page
+- **Update badge** — landing page shows a subtle pill linking to `/utils` when a newer release is available on GitHub
+- Admin utility panel at `/utils` for DB export, import, vacuum, health checks, on-demand polling, and player management
 
 ## Stack
 
@@ -81,6 +84,7 @@ Copy `.env.example` to `.env` and fill in the values:
 | `POLL_INTERVAL_MINUTES` | No | `30` | How often to fetch stats for all players |
 | `DISPLAY_TIMEZONE` | No | `America/New_York` | IANA timezone used for timestamps in the web UI |
 | `DISCORD_BOT_TOKEN` | No | — | Discord bot token; leave blank to disable the bot entirely |
+| `DISCORD_DM_USER_ID` | No | — | Discord user ID to receive DM copies of all notifications (overridable from `/utils`) |
 | `STEAM_API_KEY` | HLL only | — | Steam Web API key required for Hell Let Loose players |
 | `UTILS_TOKEN` | No | — | Secret token for the `/utils` admin panel; leave blank to disable |
 
@@ -107,7 +111,7 @@ Landing page showing the total number of tracked operators for each game, linkin
 
 ### Game pages (`/overwatch`, `/hll`)
 
-Grid of player cards, each showing the latest snapshot. For OW2 cards: competitive ranks across all four queues, overall win rate and KDA, top hero, and a 7-day trend line (win rate delta and KDA delta). For HLL cards: career kills, playtime, and a 7-day kills/playtime trend. Each card has inline REFRESH and REMOVE actions, plus a link to the full player detail page.
+Grid of player cards, each showing the latest snapshot. For OW2 cards: competitive ranks across all four queues, overall win rate and KDA, top hero, and a 7-day trend line (win rate delta and KDA delta). For HLL cards: career kills, playtime, and a 7-day kills/playtime trend. Each card links to the full player detail page. Players are managed (removed) from the `/utils` page.
 
 ### Player detail (`/players/{battletag}`)
 
@@ -143,7 +147,7 @@ Per-player page with:
 
 ### Notifications
 
-Notifications are sent as Discord embeds to all registered channels that match the game filter.
+Notifications are sent as Discord embeds to all registered channels that match the game filter. If a DM user ID is configured, a copy is also sent as a direct message.
 
 **OW2 — Session summary:** fires after a play session ends (detected when `games_played` stops increasing across polls). The embed shows session W/L, any rank changes during the session, and deltas for overall win rate and KDA compared to the session start.
 
@@ -152,6 +156,8 @@ Notifications are sent as Discord embeds to all registered channels that match t
 **HLL — Session summary:** fires when `playtime_forever` stops increasing after a session. Shows session duration, kills, headshot rate, sector caps, and XP gained during the session.
 
 If the bot is disconnected when a notification is ready, it is queued in memory and flushed automatically once the bot reconnects.
+
+All notifications can be paused instantly with the **Mute** toggle in `/utils` (no restart required).
 
 ## Admin Utilities (`/utils`)
 
@@ -164,6 +170,9 @@ Navigate to `/utils` in the browser. All actions require the `UTILS_TOKEN` set i
 | **DB Import** | Upload a `.db` file to replace the live database. The uploaded file is validated against the expected schema before the swap is made. The scheduler is paused and the connection pool is drained atomically during the switch. |
 | **DB Vacuum** | Runs SQLite `VACUUM` to compact the database and reclaim space from deleted rows. Reports before/after file sizes. |
 | **Force Poll** | Immediately polls all tracked players outside the normal schedule. Waits for the full poll to complete before returning. |
+| **Mute toggle** | Instantly suspends (or resumes) all Discord channel and DM notifications without restarting the container. |
+| **DM User ID** | Set the Discord user ID that receives a personal DM copy of every notification. Takes precedence over the `DISCORD_DM_USER_ID` env var. |
+| **Tracked Players** | Lists all tracked players by game with a confirm-gated REMOVE button. |
 
 The same actions are also available as a JSON API:
 
