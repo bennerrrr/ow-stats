@@ -11,11 +11,7 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 
 COPY . .
 
-RUN mkdir -p /app/data \
-    && adduser --disabled-password --no-create-home appuser \
-    && chown -R appuser:appuser /app
-
-USER appuser
+RUN mkdir -p /app/data
 
 EXPOSE 8000
 
