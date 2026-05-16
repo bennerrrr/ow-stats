@@ -12,10 +12,12 @@ import httpx
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, UploadFile
 from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
-from sqlalchemy import text
+from sqlalchemy import select, text
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from database import DATABASE_URL, AsyncSessionLocal, engine
+from database import DATABASE_URL, AsyncSessionLocal, engine, get_db
 from discord_bot import bot
+from models import DiscordChannel
 from scheduler import poll_all_players, scheduler
 from _templates import templates
 
@@ -182,3 +184,78 @@ async def vacuum_db(_: None = Depends(_require_token)) -> JSONResponse:
 async def force_poll(_: None = Depends(_require_token)) -> JSONResponse:
     await poll_all_players()
     return JSONResponse({"status": "ok", "message": "Poll complete"})
+
+
+@router.get("/discord/channels")
+async def discord_channels(
+    _: None = Depends(_require_token),
+    db: AsyncSession = Depends(get_db),
+) -> JSONResponse:
+    result = await db.execute(
+        select(DiscordChannel).order_by(DiscordChannel.guild_id, DiscordChannel.added_at)
+    )
+    channels = result.scalars().all()
+    guilds: dict[str, list] = {}
+    for ch in channels:
+        guilds.setdefault(ch.guild_id, []).append({
+            "channel_id": ch.channel_id,
+            "channel_name": ch.channel_name,
+            "game": ch.game,
+            "added_at": ch.added_at.isoformat(),
+        })
+    return JSONResponse({"guilds": [{"guild_id": g, "channels": chs} for g, chs in guilds.items()]})
+
+
+@router.patch("/discord/channels/{channel_id}")
+async def update_discord_channel(
+    channel_id: str,
+    game: str | None = Query(None),
+    _: None = Depends(_require_token),
+    db: AsyncSession = Depends(get_db),
+) -> JSONResponse:
+    result = await db.execute(select(DiscordChannel).where(DiscordChannel.channel_id == channel_id))
+    ch = result.scalar_one_or_none()
+    if not ch:
+        raise HTTPException(404, "Channel not registered")
+    ch.game = game if game in ("overwatch", "hell_let_loose") else None
+    await db.commit()
+    return JSONResponse({"ok": True, "game": ch.game})
+
+
+@router.delete("/discord/channels/{channel_id}")
+async def remove_discord_channel(
+    channel_id: str,
+    _: None = Depends(_require_token),
+    db: AsyncSession = Depends(get_db),
+) -> JSONResponse:
+    result = await db.execute(select(DiscordChannel).where(DiscordChannel.channel_id == channel_id))
+    ch = result.scalar_one_or_none()
+    if not ch:
+        raise HTTPException(404, "Channel not registered")
+    await db.delete(ch)
+    await db.commit()
+    return JSONResponse({"ok": True})
+
+
+@router.post("/discord/channels/{channel_id}/preview")
+async def preview_discord_channel(
+    channel_id: str,
+    _: None = Depends(_require_token),
+) -> JSONResponse:
+    from discord_bot import send_preview_to_channel
+    ok = await send_preview_to_channel(channel_id)
+    if not ok:
+        raise HTTPException(503, "Bot not ready or channel not found")
+    return JSONResponse({"ok": True})
+
+
+@router.get("/discord/invite")
+async def discord_invite(_: None = Depends(_require_token)) -> JSONResponse:
+    if not bot.is_ready():
+        raise HTTPException(503, "Bot not running")
+    perms = 1024 | 2048 | 16384  # View Channel + Send Messages + Embed Links
+    url = (
+        f"https://discord.com/oauth2/authorize"
+        f"?client_id={bot.user.id}&permissions={perms}&scope=bot+applications.commands"
+    )
+    return JSONResponse({"url": url, "client_id": str(bot.user.id)})

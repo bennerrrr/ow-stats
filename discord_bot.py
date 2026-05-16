@@ -679,6 +679,22 @@ async def send_hll_session_report(
     await _broadcast(embed, game="hell_let_loose")
 
 
+async def send_preview_to_channel(channel_id: str) -> bool:
+    if not bot.is_ready():
+        return False
+    ch = bot.get_channel(int(channel_id))
+    if ch is None:
+        return False
+    embed = discord.Embed(
+        title="ow-stats — test notification",
+        description="Notifications are working correctly for this channel.",
+        color=0x44FF88,
+    )
+    embed.set_footer(text="Sent from /utils")
+    await ch.send(embed=embed)
+    return True
+
+
 # ---------------------------------------------------------------------------
 # Bot events
 # ---------------------------------------------------------------------------

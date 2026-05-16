@@ -154,6 +154,32 @@
     </div>
   </div>
 
+  <!-- Discord Bot — full width -->
+  <div class="md:col-span-2" style="background:#111111;border:1px solid #272727;border-left:3px solid #5865F2;">
+    <div class="p-5">
+      <div class="flex items-center justify-between mb-4">
+        <div>
+          <div class="text-[10px] tracking-[0.3em] uppercase mb-1" style="color:#5865F2;opacity:0.7">NOTIFICATIONS</div>
+          <h2 class="text-sm font-bold text-white">DISCORD BOT</h2>
+        </div>
+        <div class="flex items-center gap-2">
+          <button onclick="getInviteLink()" id="invite-btn"
+            style="border:1px solid #333;"
+            class="px-4 py-1.5 text-xs font-bold uppercase tracking-wider text-gray-500 hover:text-gray-200 hover:border-[#555] transition-colors">
+            INVITE LINK
+          </button>
+          <button onclick="loadDiscordChannels()" id="discord-load-btn"
+            style="border:1px solid #333;"
+            class="px-4 py-1.5 text-xs font-bold uppercase tracking-wider text-gray-500 hover:text-gray-200 hover:border-[#555] transition-colors">
+            LOAD CHANNELS
+          </button>
+        </div>
+      </div>
+      <div id="invite-result" class="text-[10px] text-gray-700 mb-3"></div>
+      <div id="discord-result" class="text-xs text-gray-700">// AWAITING INPUT</div>
+    </div>
+  </div>
+
 </div>
 
 <script>
@@ -370,6 +396,139 @@
     } catch (e) {
       el.innerHTML = err('● ' + e.message);
     }
+  }
+
+  async function loadDiscordChannels() {
+    const btn = document.getElementById('discord-load-btn');
+    const el = document.getElementById('discord-result');
+    btn.textContent = 'LOADING…';
+    btn.disabled = true;
+    el.innerHTML = dim('// FETCHING…');
+    try {
+      const res = await apiCall('/utils/discord/channels');
+      if (await handleApiError(res, 'discord-result')) { btn.textContent = 'LOAD CHANNELS'; btn.disabled = false; return; }
+      const d = await res.json();
+      if (!d.guilds.length) {
+        el.innerHTML = dim('// NO CHANNELS REGISTERED — use /set_channel in Discord');
+      } else {
+        el.innerHTML = renderDiscordChannels(d.guilds);
+      }
+    } catch (e) {
+      el.innerHTML = err('● ' + e.message);
+    }
+    btn.textContent = 'LOAD CHANNELS';
+    btn.disabled = false;
+  }
+
+  function renderDiscordChannels(guilds) {
+    return guilds.map(g => {
+      const channelRows = g.channels.map((ch, i) => {
+        const isLast = i === g.channels.length - 1;
+        const prefix = isLast ? '└──' : '├──';
+        const name = ch.channel_name ? '#' + ch.channel_name : ch.channel_id;
+        const gameOpts = [
+          ['', 'ALL GAMES'],
+          ['overwatch', 'OVERWATCH'],
+          ['hell_let_loose', 'HLL'],
+        ].map(([val, label]) =>
+          `<option value="${val}"${(ch.game === val || (ch.game == null && val === '')) ? ' selected' : ''}>${label}</option>`
+        ).join('');
+        return `<div class="flex items-center gap-2 py-1 flex-wrap" style="font-family:monospace;font-size:11px">
+          <span style="color:#333;flex-shrink:0">${prefix}</span>
+          <span style="color:#aaa;min-width:140px">${name}</span>
+          <span style="color:#444;font-size:10px">${ch.channel_id}</span>
+          <select onchange="updateChannelFilter('${ch.channel_id}', this.value)"
+            style="background:#0a0a0a;border:1px solid #333;color:#888;font-size:10px;padding:2px 6px;margin-left:auto;cursor:pointer">
+            ${gameOpts}
+          </select>
+          <button onclick="previewChannel('${ch.channel_id}', this)"
+            style="border:1px solid #333;padding:2px 8px;font-size:10px;color:#666;cursor:pointer;background:transparent"
+            class="hover:text-gray-200 hover:border-[#555] transition-colors">PREVIEW</button>
+          <button onclick="removeChannel('${ch.channel_id}', this)"
+            style="border:1px solid #3b1f1f;padding:2px 8px;font-size:10px;color:#7f1d1d;cursor:pointer;background:transparent"
+            class="hover:text-red-400 hover:border-red-800 transition-colors">REMOVE</button>
+        </div>`;
+      }).join('');
+      return `<div class="mb-5">
+        <div style="color:#5865F2;font-size:10px;font-family:monospace;margin-bottom:4px;letter-spacing:0.15em">
+          // GUILD ${g.guild_id} <span style="color:#444">(${g.channels.length} ${g.channels.length === 1 ? 'channel' : 'channels'})</span>
+        </div>
+        ${channelRows}
+      </div>`;
+    }).join('');
+  }
+
+  async function updateChannelFilter(channelId, game) {
+    const token = getToken();
+    const url = `/utils/discord/channels/${channelId}?token=${encodeURIComponent(token)}${game ? '&game=' + encodeURIComponent(game) : ''}`;
+    try { await fetch(url, { method: 'PATCH' }); } catch {}
+  }
+
+  async function removeChannel(channelId, btn) {
+    if (!confirm('Remove this channel from notifications?')) return;
+    const orig = btn.textContent;
+    btn.textContent = '…';
+    btn.disabled = true;
+    try {
+      const res = await apiCall(`/utils/discord/channels/${channelId}`, 'DELETE');
+      if (res.ok) { loadDiscordChannels(); return; }
+      btn.textContent = 'ERR';
+      btn.disabled = false;
+    } catch {
+      btn.textContent = 'ERR';
+      btn.disabled = false;
+    }
+  }
+
+  async function previewChannel(channelId, btn) {
+    const orig = btn.textContent;
+    btn.textContent = '…';
+    btn.disabled = true;
+    try {
+      const res = await apiCall(`/utils/discord/channels/${channelId}/preview`, 'POST');
+      btn.textContent = res.ok ? 'SENT ✓' : 'FAIL';
+    } catch {
+      btn.textContent = 'ERR';
+    }
+    setTimeout(() => { btn.textContent = orig; btn.disabled = false; }, 2000);
+  }
+
+  async function getInviteLink() {
+    const btn = document.getElementById('invite-btn');
+    const el = document.getElementById('invite-result');
+    btn.textContent = 'LOADING…';
+    btn.disabled = true;
+    try {
+      const res = await apiCall('/utils/discord/invite');
+      if (res.status === 503) {
+        let detail = 'Bot not running';
+        try { const j = await res.json(); detail = j.detail || detail; } catch {}
+        el.innerHTML = err('● ' + detail.toUpperCase());
+      } else if (!res.ok) {
+        await handleApiError(res, 'invite-result');
+      } else {
+        const d = await res.json();
+        el.innerHTML = `<div class="flex items-center gap-2 mt-1">
+          <code id="invite-url-text" style="background:#0a0a0a;border:1px solid #333;padding:4px 8px;font-size:10px;color:#888;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:480px">${d.url}</code>
+          <button onclick="copyInviteUrl()" id="copy-invite-btn"
+            style="border:1px solid #333;padding:3px 10px;font-size:10px;color:#666;cursor:pointer;background:transparent"
+            class="hover:text-gray-200 hover:border-[#555] transition-colors whitespace-nowrap">COPY</button>
+        </div>`;
+      }
+    } catch (e) {
+      el.innerHTML = err('● ' + e.message);
+    }
+    btn.textContent = 'INVITE LINK';
+    btn.disabled = false;
+  }
+
+  function copyInviteUrl() {
+    const url = document.getElementById('invite-url-text').textContent;
+    navigator.clipboard.writeText(url).then(() => {
+      const btn = document.getElementById('copy-invite-btn');
+      btn.textContent = 'COPIED';
+      setTimeout(() => { btn.textContent = 'COPY'; }, 2000);
+    });
   }
 </script>
 
