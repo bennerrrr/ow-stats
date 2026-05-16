@@ -343,6 +343,61 @@ def _compute_hll_trend(snaps) -> dict | None:
     return {"kills_delta": kills_delta, "pt_delta": pt_delta, "period": period}
 
 
+@router.get("/leaderboard", response_class=HTMLResponse)
+async def leaderboard(request: Request, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(Player).order_by(Player.added_at))
+    players = result.scalars().all()
+
+    ow_rows = []
+    hll_rows = []
+    for player in players:
+        snap_result = await db.execute(
+            select(StatSnapshot)
+            .where(StatSnapshot.player_id == player.id)
+            .order_by(StatSnapshot.fetched_at.desc())
+            .limit(1)
+        )
+        snap = snap_result.scalar_one_or_none()
+        name = player.display_name or player.battletag.split("#")[0]
+        if player.game == "hell_let_loose":
+            gd = (snap.game_data or {}) if snap else {}
+            kills = gd.get("kills")
+            pt = gd.get("playtime_forever")
+            hs = gd.get("headshots")
+            kph = round(kills / (pt / 60), 1) if (kills and pt and pt > 0) else None
+            hs_pct = round(hs / kills * 100, 1) if (hs is not None and kills) else None
+            hll_rows.append({
+                "battletag": player.battletag,
+                "name": name,
+                "avatar_url": player.avatar_url,
+                "kills": kills,
+                "kph": kph,
+                "pt_hours": round(pt / 60, 1) if pt else None,
+                "hs_pct": hs_pct,
+                "fetched_at": snap.fetched_at if snap else None,
+            })
+        else:
+            wr = round(snap.win_rate * 100, 1) if (snap and snap.win_rate is not None) else None
+            kda = snap.kda if snap else None
+            top_hero = (snap.top_heroes or [None])[0] if snap else None
+            ow_rows.append({
+                "battletag": player.battletag,
+                "name": name,
+                "avatar_url": player.avatar_url,
+                "win_rate": wr,
+                "kda": kda,
+                "games": snap.games_played if snap else None,
+                "top_hero": top_hero.get("name") if top_hero else None,
+                "fetched_at": snap.fetched_at if snap else None,
+            })
+
+    return templates.TemplateResponse("leaderboard.html", {
+        "request": request,
+        "ow_rows": ow_rows,
+        "hll_rows": hll_rows,
+    })
+
+
 @router.get("/", response_class=HTMLResponse)
 async def index(request: Request, db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(Player).order_by(Player.added_at))

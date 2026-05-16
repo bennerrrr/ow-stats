@@ -145,11 +145,18 @@
       <div class="text-[10px] text-gray-600 tracking-[0.3em] uppercase mb-1">SCHEDULER</div>
       <h2 class="text-sm font-bold text-white mb-1">FORCE POLL</h2>
       <p class="text-[10px] text-gray-700 mb-4">Trigger an immediate stats poll for all tracked players outside the normal schedule.</p>
-      <button onclick="doPoll()"
-        style="border:1px solid #333;"
-        class="px-4 py-1.5 text-xs font-bold uppercase tracking-wider text-gray-500 hover:text-gray-200 hover:border-[#555] transition-colors">
-        ► POLL NOW
-      </button>
+      <div class="flex flex-wrap gap-2">
+        <button onclick="doPoll()"
+          style="border:1px solid #333;"
+          class="px-4 py-1.5 text-xs font-bold uppercase tracking-wider text-gray-500 hover:text-gray-200 hover:border-[#555] transition-colors">
+          ► POLL NOW
+        </button>
+        <button onclick="doDigest()"
+          style="border:1px solid #333;"
+          class="px-4 py-1.5 text-xs font-bold uppercase tracking-wider text-gray-500 hover:text-gray-200 hover:border-[#555] transition-colors">
+          📅 SEND WEEKLY DIGEST
+        </button>
+      </div>
       <div id="poll-result" class="text-[10px] text-gray-700 mt-2"></div>
     </div>
   </div>
@@ -445,6 +452,19 @@
     el.innerHTML = dim('● POLLING ALL PLAYERS…');
     try {
       const res = await apiCall('/utils/poll', 'POST');
+      if (await handleApiError(res, 'poll-result')) return;
+      const d = await res.json();
+      el.innerHTML = ok('● ' + d.message.toUpperCase());
+    } catch (e) {
+      el.innerHTML = err('● ' + e.message);
+    }
+  }
+
+  async function doDigest() {
+    const el = document.getElementById('poll-result');
+    el.innerHTML = dim('● COMPUTING WEEKLY DIGEST…');
+    try {
+      const res = await apiCall('/utils/digest', 'POST');
       if (await handleApiError(res, 'poll-result')) return;
       const d = await res.json();
       el.innerHTML = ok('● ' + d.message.toUpperCase());

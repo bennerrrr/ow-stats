@@ -19,6 +19,37 @@ def _slog(value: str) -> str:
     return str(value).replace("\n", " ").replace("\r", " ")
 
 
+_TIER_ORDER = {
+    "bronze": 0, "silver": 1, "gold": 2, "platinum": 3,
+    "diamond": 4, "master": 5, "grandmaster": 6, "champion": 7,
+}
+_OW_GAME_MILESTONES = {100, 250, 500, 1000, 2500, 5000}
+_HLL_KILL_MILESTONES = {1000, 5000, 10000, 25000, 50000, 100000}
+
+
+def _rank_tier(rank: str | None) -> tuple[int, int]:
+    """(tier_idx, -division) — higher is better in both axes."""
+    if not rank:
+        return (-1, 0)
+    parts = rank.lower().split()
+    tier = _TIER_ORDER.get(parts[0], -1)
+    div = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else 0
+    return (tier, -div)
+
+
+def _rank_improved(old: str | None, new: str | None) -> bool:
+    return _rank_tier(new) > _rank_tier(old) and _rank_tier(old) != (-1, 0)
+
+
+def _crossed_milestone(prev: int | None, new: int | None, milestones: set) -> int | None:
+    if prev is None or new is None:
+        return None
+    for m in sorted(milestones):
+        if prev < m <= new:
+            return m
+    return None
+
+
 def _safe_avatar_url(url: str | None) -> str | None:
     if url and url.startswith("https://") and len(url) <= 500:
         return url
@@ -169,6 +200,38 @@ async def _snapshot_ow(battletag: str) -> None:
                 new=new_dict,
             ))
 
+    # Milestone: rank-up (any role improved tier)
+    rank_up_msgs = []
+    for role, prev_rank, new_rank in [
+        ("Tank", prev_dict.get("rank_tank"), data.rank_tank),
+        ("Damage", prev_dict.get("rank_damage"), data.rank_damage),
+        ("Support", prev_dict.get("rank_support"), data.rank_support),
+        ("Open Queue", prev_dict.get("rank_open"), data.rank_open),
+    ]:
+        if _rank_improved(prev_rank, new_rank):
+            rank_up_msgs.append(f"{role}: {prev_rank} → **{new_rank}**")
+    if rank_up_msgs:
+        asyncio.create_task(_send_milestone(
+            player_name=data.username,
+            battletag=battletag,
+            avatar_url=_safe_avatar_url(data.avatar),
+            game="overwatch",
+            milestone_type="rank_up",
+            value="\n".join(rank_up_msgs),
+        ))
+
+    # Milestone: career game count
+    game_milestone = _crossed_milestone(prev_dict.get("games_played"), data.games_played, _OW_GAME_MILESTONES)
+    if game_milestone:
+        asyncio.create_task(_send_milestone(
+            player_name=data.username,
+            battletag=battletag,
+            avatar_url=_safe_avatar_url(data.avatar),
+            game="overwatch",
+            milestone_type="games",
+            value=game_milestone,
+        ))
+
 
 async def _snapshot_hll(steam_id: str) -> None:
     api_key = os.getenv("STEAM_API_KEY", "")
@@ -305,6 +368,18 @@ async def _snapshot_hll(steam_id: str) -> None:
                 top_role=sess.get("top_role"),
             ))
 
+    # Milestone: kill count
+    kill_milestone = _crossed_milestone(prev_gd_stored.get("kills"), data.kills, _HLL_KILL_MILESTONES)
+    if kill_milestone:
+        asyncio.create_task(_send_milestone(
+            player_name=data.display_name,
+            battletag=steam_id,
+            avatar_url=_safe_avatar_url(data.avatar),
+            game="hell_let_loose",
+            milestone_type="kills",
+            value=kill_milestone,
+        ))
+
 
 async def snapshot_player(battletag: str) -> None:
     """Dispatch to the correct game's snapshot function based on the DB record."""
@@ -370,6 +445,73 @@ async def _send_hll_session_report(player_name, steam_id, avatar_url, duration_m
         logger.error("Error sending HLL session report for %s: %s", _slog(steam_id), e)
 
 
+async def _send_milestone(player_name, battletag, avatar_url, game, milestone_type, value):
+    try:
+        from discord_bot import send_milestone_alert
+        await send_milestone_alert(player_name, battletag, avatar_url, game, milestone_type, value)
+    except Exception as e:
+        logger.error("Error sending milestone alert for %s: %s", _slog(battletag), e)
+
+
+async def weekly_digest() -> None:
+    """Compute weekly stats for all players and post digest embeds to Discord."""
+    cutoff = datetime.now(timezone.utc) - timedelta(days=7)
+    week_label = cutoff.strftime("%b %d")
+    ow_rows: list[dict] = []
+    hll_rows: list[dict] = []
+
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(select(Player).order_by(Player.added_at))
+        players = result.scalars().all()
+
+        for player in players:
+            snaps_result = await session.execute(
+                select(StatSnapshot)
+                .where(StatSnapshot.player_id == player.id)
+                .where(StatSnapshot.fetched_at >= cutoff)
+                .order_by(StatSnapshot.fetched_at)
+            )
+            snaps = snaps_result.scalars().all()
+            name = player.display_name or player.battletag.split("#")[0]
+
+            if player.game == "overwatch":
+                if len(snaps) < 2:
+                    continue
+                first, last = snaps[0], snaps[-1]
+                games_delta = (last.games_played or 0) - (first.games_played or 0)
+                if games_delta <= 0:
+                    continue
+                wins_delta = max(0, (last.games_won or 0) - (first.games_won or 0))
+                wr = round(wins_delta / games_delta * 100, 1)
+                stat_line = f"{games_delta} games · {wr}% WR"
+                if last.kda is not None:
+                    stat_line += f" · {last.kda:.2f} KDA"
+                ow_rows.append({"name": name, "stat_line": stat_line, "_sort": games_delta})
+
+            else:
+                if len(snaps) < 2:
+                    continue
+                first_gd = snaps[0].game_data or {}
+                last_gd = snaps[-1].game_data or {}
+                pt_delta = (last_gd.get("playtime_forever") or 0) - (first_gd.get("playtime_forever") or 0)
+                kills_delta = (last_gd.get("kills") or 0) - (first_gd.get("kills") or 0)
+                if pt_delta <= 0:
+                    continue
+                h, m = divmod(pt_delta, 60)
+                time_str = f"{h}h {m}m" if h else f"{m}m"
+                stat_line = f"{time_str} played · {kills_delta:,} kills"
+                hll_rows.append({"name": name, "stat_line": stat_line, "_sort": pt_delta})
+
+    ow_rows.sort(key=lambda r: r["_sort"], reverse=True)
+    hll_rows.sort(key=lambda r: r["_sort"], reverse=True)
+
+    try:
+        from discord_bot import send_weekly_digest
+        await send_weekly_digest(ow_rows, hll_rows, week_label)
+    except Exception as e:
+        logger.error("Error sending weekly digest: %s", e)
+
+
 async def poll_all_players() -> None:
     async with AsyncSessionLocal() as session:
         result = await session.execute(select(Player.battletag))
@@ -383,6 +525,7 @@ async def poll_all_players() -> None:
 def start_scheduler() -> None:
     interval = int(os.getenv("POLL_INTERVAL_MINUTES", "30"))
     scheduler.add_job(poll_all_players, "interval", minutes=interval, id="poll_players")
+    scheduler.add_job(weekly_digest, "cron", day_of_week="mon", hour=9, minute=0, id="weekly_digest")
     scheduler.start()
     logger.info("Scheduler started — polling every %d minutes", interval)
 

@@ -669,6 +669,101 @@ async def _send_dm(embed: discord.Embed) -> None:
         logger.warning("DM failed to user %s: %s", user_id, e)
 
 
+MILESTONE_COLOR = 0x00D4FF  # cyan
+
+
+def build_milestone_embed(
+    player_name: str,
+    battletag: str,
+    avatar_url: str | None,
+    game: str,
+    milestone_type: str,
+    value: int | str,
+) -> discord.Embed:
+    if milestone_type == "rank_up":
+        title = f"🏅 Rank Up — {player_name}"
+        desc = f"**{value}**"
+    elif milestone_type == "games":
+        title = f"🎮 Milestone — {player_name}"
+        desc = f"Reached **{value:,} career games**"
+    elif milestone_type == "kills":
+        title = f"💀 Milestone — {player_name}"
+        desc = f"Reached **{value:,} career kills**"
+    else:
+        title = f"⭐ Milestone — {player_name}"
+        desc = str(value)
+
+    game_label = "Overwatch 2" if game == "overwatch" else "Hell Let Loose"
+    embed = discord.Embed(title=title, description=desc, color=MILESTONE_COLOR)
+    embed.set_author(name=game_label)
+    if avatar_url:
+        embed.set_thumbnail(url=avatar_url)
+    embed.set_footer(text=datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"))
+    return embed
+
+
+async def send_milestone_alert(
+    player_name: str,
+    battletag: str,
+    avatar_url: str | None,
+    game: str,
+    milestone_type: str,
+    value: int | str,
+) -> None:
+    if not bot.is_ready():
+        logger.warning("Bot not ready — queuing milestone alert for %s", _slog(battletag))
+        _notification_queue.append(lambda: send_milestone_alert(
+            player_name, battletag, avatar_url, game, milestone_type, value
+        ))
+        return
+    embed = build_milestone_embed(player_name, battletag, avatar_url, game, milestone_type, value)
+    await _broadcast(embed, game=game)
+    await _send_dm(embed)
+
+
+# ---------------------------------------------------------------------------
+# Weekly digest
+# ---------------------------------------------------------------------------
+
+def build_weekly_digest_embed(
+    game: str,
+    week_label: str,
+    rows: list[dict],
+) -> discord.Embed:
+    """Rows: list of {name, stat_line} sorted by primary stat descending."""
+    color = OW_COLOR if game == "overwatch" else HLL_COLOR
+    game_label = "⚔ Overwatch 2" if game == "overwatch" else "🪖 Hell Let Loose"
+    embed = discord.Embed(
+        title=f"📅 Weekly Digest — {game_label}",
+        description=f"Week of **{week_label}**",
+        color=color,
+    )
+    if not rows:
+        embed.description += "\n\nNo activity this week."
+        return embed
+    lines = []
+    for i, row in enumerate(rows):
+        medal = ["🥇", "🥈", "🥉"][i] if i < 3 else f"{i + 1}."
+        lines.append(f"{medal} **{row['name']}** — {row['stat_line']}")
+    embed.add_field(name="This Week", value="\n".join(lines), inline=False)
+    embed.set_footer(text=f"Auto-generated · {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}")
+    return embed
+
+
+async def send_weekly_digest(ow_rows: list[dict], hll_rows: list[dict], week_label: str) -> None:
+    if not bot.is_ready():
+        logger.warning("Bot not ready — skipping weekly digest")
+        return
+    if ow_rows:
+        embed = build_weekly_digest_embed("overwatch", week_label, ow_rows)
+        await _broadcast(embed, game="overwatch")
+        await _send_dm(embed)
+    if hll_rows:
+        embed = build_weekly_digest_embed("hell_let_loose", week_label, hll_rows)
+        await _broadcast(embed, game="hell_let_loose")
+        await _send_dm(embed)
+
+
 async def send_game_report(
     player_name: str,
     battletag: str,
