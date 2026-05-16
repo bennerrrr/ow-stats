@@ -65,6 +65,14 @@
 
 </div>
 
+{% if update_available %}
+<a href="/utils" title="Update available: {{ latest_version }}"
+  style="position:fixed;bottom:20px;right:20px;z-index:50;background:#111;border:1px solid #272727;border-left:3px solid #44ff88;padding:6px 12px;font-family:inherit;font-size:10px;letter-spacing:0.2em;color:#44ff88;text-decoration:none;opacity:0.85;transition:opacity 0.15s"
+  class="hover:opacity-100 uppercase tracking-widest">
+  ↑ UPDATE {{ latest_version }}
+</a>
+{% endif %}
+
 <script>
 (function() {
   const cvs = document.getElementById('hex-canvas');

@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from database import get_db
 from models import Player, StatSnapshot
 from ow_client import fetch_player as ow_fetch_player, ProfilePrivateError, PlayerNotFoundError as OWPlayerNotFoundError, OverFastError, InvalidBattletagError, HERO_ROLES
+from routers.utils import get_version_info
 from scheduler import snapshot_player
 from _templates import templates
 
@@ -329,10 +330,15 @@ async def index(request: Request, db: AsyncSession = Depends(get_db)):
     players = result.scalars().all()
     ow_count = sum(1 for p in players if p.game != "hell_let_loose")
     hll_count = sum(1 for p in players if p.game == "hell_let_loose")
+    version_info = await get_version_info()
+    update_available = bool(version_info and version_info.get("outdated"))
+    latest_version = version_info.get("latest", "") if version_info else ""
     return templates.TemplateResponse("index.html", {
         "request": request,
         "ow_count": ow_count,
         "hll_count": hll_count,
+        "update_available": update_available,
+        "latest_version": latest_version,
     })
 
 

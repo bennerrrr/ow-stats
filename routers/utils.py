@@ -51,11 +51,16 @@ def _require_token(
         raise HTTPException(403, detail="Invalid token")
 
 
-@router.get("/version")
-async def check_version(_: None = Depends(_require_token)) -> JSONResponse:
+def _sv(tag: str) -> tuple:
+    m = re.match(r"v?(\d+)\.(\d+)\.(\d+)", tag)
+    return tuple(int(x) for x in m.groups()) if m else (0, 0, 0)
+
+
+async def get_version_info() -> dict | None:
+    """Return cached version dict or fetch from GitHub. Returns None on failure."""
     now = time.time()
     if _version_cache["data"] and now - _version_cache["fetched_at"] < _VERSION_TTL:
-        return JSONResponse({**_version_cache["data"], "cached": True})
+        return {**_version_cache["data"], "cached": True}
 
     current = templates.env.globals["app_version"]
     try:
@@ -67,17 +72,21 @@ async def check_version(_: None = Depends(_require_token)) -> JSONResponse:
             r.raise_for_status()
             latest = r.json()["tag_name"]
     except Exception:
-        return JSONResponse({"error": "Failed to reach GitHub API"}, status_code=502)
-
-    def _sv(tag: str) -> tuple:
-        m = re.match(r"v?(\d+)\.(\d+)\.(\d+)", tag)
-        return tuple(int(x) for x in m.groups()) if m else (0, 0, 0)
+        return None
 
     outdated = _sv(latest) > _sv(current)
     data = {"current": current, "latest": latest, "outdated": outdated}
     _version_cache["data"] = data
     _version_cache["fetched_at"] = now
-    return JSONResponse({**data, "cached": False})
+    return {**data, "cached": False}
+
+
+@router.get("/version")
+async def check_version(_: None = Depends(_require_token)) -> JSONResponse:
+    info = await get_version_info()
+    if info is None:
+        return JSONResponse({"error": "Failed to reach GitHub API"}, status_code=502)
+    return JSONResponse(info)
 
 
 @router.get("/health")
